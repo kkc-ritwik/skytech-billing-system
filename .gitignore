@@ -1,0 +1,17 @@
+node_modules
+dist
+out
+release
+*.log
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+# Local runtime data (the user's database lives in Electron userData, never in repo)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+/data
+# License signing private key MUST NEVER be committed. Keep it on your portal.
+*.private.pem

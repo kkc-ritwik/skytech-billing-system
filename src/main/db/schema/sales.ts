@@ -1,0 +1,100 @@
+import { integer, real, sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { id, timestamps, softDelete } from './common'
+import { parties } from './parties'
+import { items } from './items'
+import { users } from './auth'
+
+/**
+ * Unified sales document header. One table for every outbound document so the
+ * conversion chain (order -> proforma -> invoice -> challan) and returns share
+ * one consistent shape. `docType` discriminates behaviour.
+ *
+ * docType ∈ sales_order | proforma | invoice | challan | sales_return
+ * status  ∈ draft | confirmed | partially_delivered | delivered | cancelled
+ *           (invoices also use payment status fields below)
+ *
+ * All money fields are paise. Tax is split CGST/SGST (intra-state) OR IGST
+ * (inter-state) based on company vs party state code.
+ */
+export const salesDocuments = sqliteTable(
+  'sales_documents',
+  {
+    id: id(),
+    docType: text('doc_type').notNull(),
+    number: text('number').notNull(), // INV/2025-26/0001
+    partyId: text('party_id')
+      .notNull()
+      .references(() => parties.id),
+    // Links a document to the one it was created from (e.g. invoice -> order).
+    parentId: text('parent_id'),
+    issueDate: integer('issue_date', { mode: 'timestamp_ms' }).notNull(),
+    dueDate: integer('due_date', { mode: 'timestamp_ms' }),
+    referenceNo: text('reference_no'), // customer PO no, etc.
+    placeOfSupply: text('place_of_supply'), // state code
+    isInterState: integer('is_inter_state', { mode: 'boolean' }).notNull().default(false),
+
+    status: text('status').notNull().default('draft'),
+
+    // Totals (paise)
+    subTotal: integer('sub_total').notNull().default(0), // sum of line taxable values
+    discountTotal: integer('discount_total').notNull().default(0),
+    cgstTotal: integer('cgst_total').notNull().default(0),
+    sgstTotal: integer('sgst_total').notNull().default(0),
+    igstTotal: integer('igst_total').notNull().default(0),
+    cessTotal: integer('cess_total').notNull().default(0),
+    // Invoice-level adjustments applied after line tax (e.g. freight, special discount).
+    extraChargesLabel: text('extra_charges_label'),
+    extraCharges: integer('extra_charges').notNull().default(0),
+    extraDiscount: integer('extra_discount').notNull().default(0),
+    roundOff: integer('round_off').notNull().default(0),
+    grandTotal: integer('grand_total').notNull().default(0),
+
+    // Payment tracking (invoices / sales_returns). paidAmount is maintained in
+    // the same transaction as payment allocations.
+    paidAmount: integer('paid_amount').notNull().default(0),
+    paymentStatus: text('payment_status').notNull().default('unpaid'), // unpaid|partial|paid
+
+    notes: text('notes'),
+    termsAndConditions: text('terms'),
+    createdBy: text('created_by').references(() => users.id),
+    ...timestamps,
+    ...softDelete
+  },
+  (t) => ({
+    numUq: uniqueIndex('sales_doc_num_uq').on(t.docType, t.number),
+    partyIdx: index('sales_doc_party_idx').on(t.partyId),
+    typeIdx: index('sales_doc_type_idx').on(t.docType),
+    dateIdx: index('sales_doc_date_idx').on(t.issueDate)
+  })
+)
+
+export const salesDocumentLines = sqliteTable(
+  'sales_document_lines',
+  {
+    id: id(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => salesDocuments.id),
+    itemId: text('item_id').references(() => items.id),
+    description: text('description').notNull(),
+    hsnCode: text('hsn_code'),
+    batchNo: text('batch_no'),
+    expiryDate: integer('expiry_date', { mode: 'timestamp_ms' }),
+    quantity: real('quantity').notNull(),
+    unitPrice: integer('unit_price').notNull(), // paise, exclusive of tax
+    discountPct: integer('discount_pct').notNull().default(0), // basis points
+    discountAmount: integer('discount_amount').notNull().default(0), // paise
+    taxRateBps: integer('tax_rate_bps').notNull().default(0),
+    taxableValue: integer('taxable_value').notNull().default(0),
+    cgstAmount: integer('cgst_amount').notNull().default(0),
+    sgstAmount: integer('sgst_amount').notNull().default(0),
+    igstAmount: integer('igst_amount').notNull().default(0),
+    cessAmount: integer('cess_amount').notNull().default(0),
+    lineTotal: integer('line_total').notNull().default(0),
+    sortOrder: integer('sort_order').notNull().default(0)
+  },
+  (t) => ({ docIdx: index('sales_line_doc_idx').on(t.documentId) })
+)
+
+export type SalesDocument = typeof salesDocuments.$inferSelect
+export type SalesDocumentLine = typeof salesDocumentLines.$inferSelect

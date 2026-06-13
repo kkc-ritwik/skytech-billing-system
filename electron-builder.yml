@@ -1,0 +1,65 @@
+appId: com.skytech.billing
+productName: SkyTech Billing
+copyright: Copyright © 2026 SkyTech
+
+directories:
+  buildResources: build
+  output: release/${version}
+
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintrc,.eslintrc.cjs,.prettierrc,.prettierignore,.editorconfig}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,drizzle.config.ts}'
+  - '!{.env,.env.*,.npmrc}'
+  - '!scripts/*'
+  - '!admin-portal/*'
+  - '!*.private.pem'
+
+# libSQL ships prebuilt N-API binaries (ABI-stable) — no native rebuild needed.
+npmRebuild: false
+
+asarUnpack:
+  # Native .node binaries must live on disk (not inside asar) to load.
+  - '**/node_modules/@libsql/**'
+  - '**/node_modules/libsql/**'
+
+extraResources:
+  # SQL migrations are applied at runtime against the user's local DB.
+  - from: src/main/db/migrations
+    to: migrations
+    filter: ['**/*']
+
+win:
+  executableName: SkyTechBilling
+  icon: build/icon.png
+  # Disabled so the build works without Windows Developer Mode / admin (the
+  # signing toolchain download needs symlink privileges). Trade-off: the .exe
+  # itself keeps the default Electron icon (installer + shortcuts still use ours).
+  # For a production build WITH the embedded exe icon, turn Developer Mode ON
+  # (Settings → Privacy & security → For developers) and set this back to true.
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # Code signing: provide an EV/OV certificate to clear SmartScreen warnings.
+  # certificateFile: build/cert.pfx
+  # certificatePassword: ${env.CSC_KEY_PASSWORD}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SkyTech Billing
+  artifactName: SkyTech-Billing-Setup-${version}.${ext}
+  deleteAppDataOnUninstall: false
+
+# Auto-update feed. Point this at your release host (GitHub Releases, S3, or a
+# generic web server) when you start publishing builds.
+publish:
+  provider: generic
+  url: https://updates.skytech.example/releases/
