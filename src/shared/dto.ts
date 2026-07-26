@@ -37,6 +37,12 @@ export const itemInputSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(200),
   description: optionalText,
   categoryId: z.string().optional().nullable(),
+  /**
+   * Free-typed category, e.g. "Saree" or "Salwar Suit". Takes precedence over
+   * categoryId: the shop types a name and it is created on first use, so there
+   * is no separate screen to manage a category list.
+   */
+  categoryName: z.string().trim().max(60).optional().nullable(),
   unitId: z.string().optional().nullable(),
   hsnCode: optionalText,
   taxRateId: z.string().optional().nullable(),
@@ -48,7 +54,10 @@ export const itemInputSchema = z.object({
   openingStock: z.number().min(0),
   openingStockValue: money,
   barcode: optionalText,
-  isActive: z.boolean()
+  isActive: z.boolean(),
+  // Textile: metres in one piece (the CUT). 0 = not a cut-based item.
+  cutLength: z.number().min(0).max(1000).default(0),
+  packing: z.string().trim().max(30).optional().nullable()
 })
 export type ItemInput = z.infer<typeof itemInputSchema>
 
@@ -83,13 +92,27 @@ export const docLineSchema = z.object({
   hsnCode: optionalText,
   batchNo: optionalText,
   expiryDate: z.number().optional().nullable(),
+  // PCS on the printed bill.
   quantity: z.number().positive('Quantity must be greater than 0'),
+  // RATE per piece, in paise, exclusive of tax.
   unitPrice: z.number().int().min(0),
   discountPct: z.number().int().min(0).max(10000).default(0),
   discountAmount: z.number().int().min(0).default(0),
   taxRateBps: z.number().int().min(0).default(0)
 })
 export type DocLineInput = z.infer<typeof docLineSchema>
+
+/**
+ * Sales lines additionally carry the textile presentation fields. These live
+ * only on the sales side because `purchase_document_lines` has no such columns
+ * — keeping them off `docLineSchema` stops purchase paperwork inheriting them.
+ */
+export const salesDocLineSchema = docLineSchema.extend({
+  // Metres per piece; MTS is derived as quantity x cutLength for display only.
+  cutLength: z.number().min(0).max(1000).default(0),
+  packing: z.string().trim().max(30).optional().nullable()
+})
+export type SalesDocLineInput = z.infer<typeof salesDocLineSchema>
 
 export const SALES_DOC_TYPES = ['sales_order', 'proforma', 'invoice', 'challan', 'sales_return'] as const
 export const PURCHASE_DOC_TYPES = ['purchase_order', 'grn', 'purchase_return'] as const
@@ -106,9 +129,31 @@ export const salesDocInputSchema = z.object({
   extraChargesLabel: optionalText,
   extraCharges: z.number().int().min(0).default(0),
   extraDiscount: z.number().int().min(0).default(0),
+
+  // Invoice-level trade scheme applied BEFORE GST (200 bps = 2.00%).
+  schemeLabel: z.string().trim().max(30).optional().nullable(),
+  schemePct: z.number().int().min(0).max(10000).default(0),
+
+  // Dispatch / transport block printed on the invoice head.
+  challanNo: optionalText,
+  orderNo: optionalText,
+  agentName: optionalText,
+  consigneeName: optionalText,
+  consigneeGstin: gstinField,
+  lrNo: optionalText,
+  lrDate: z.number().optional().nullable(),
+  transportName: optionalText,
+  transportStation: optionalText,
+  caseNo: optionalText,
+  weight: z.number().min(0).default(0),
+  freight: z.number().int().min(0).default(0),
+  ewayBillNo: z.string().trim().max(20).optional().nullable(),
+  transporterId: z.string().trim().max(20).optional().nullable(),
+  dueDays: z.number().int().min(0).max(3650).default(0),
+
   notes: z.string().trim().max(2000).optional().nullable(),
   termsAndConditions: z.string().trim().max(2000).optional().nullable(),
-  lines: z.array(docLineSchema).min(1, 'Add at least one line item')
+  lines: z.array(salesDocLineSchema).min(1, 'Add at least one line item')
 })
 export type SalesDocInput = z.infer<typeof salesDocInputSchema>
 

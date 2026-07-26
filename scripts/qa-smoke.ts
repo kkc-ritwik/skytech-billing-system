@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const dbPath = join(tmpdir(), `ledgerline-qa-${Date.now()}.db`)
+const dbPath = join(tmpdir(), `shailee-qa-${Date.now()}.db`)
 process.env.LEDGERLINE_DB_PATH = dbPath
 
 import { initDatabase, getDb, getClient, closeDatabase } from '../src/main/db/client'

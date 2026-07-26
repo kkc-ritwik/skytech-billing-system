@@ -33,6 +33,9 @@ export async function listParties(filter?: {
       email: parties.email,
       billingCity: parties.billingCity,
       billingState: parties.billingState,
+      // Needed by the POS to decide IGST vs CGST/SGST. Without it every bill
+      // silently falls back to intra-state.
+      billingStateCode: parties.billingStateCode,
       creditLimit: parties.creditLimit,
       creditDays: parties.creditDays,
       openingBalance: parties.openingBalance,

@@ -1,6 +1,6 @@
-# SkyTech Billing
+# Shailee-GRMS
 
-> *Billing that reaches new heights.* — by **SkyTech**
+> *Manage Fashion. Grow Your Business..* — by **Shailee**
 
 A **production-grade, offline-first billing & inventory desktop application** for
 distributors who supply schools, colleges and other institutions. Windows `.exe`,
@@ -8,7 +8,7 @@ local SQLite database, role-based access, GST invoicing, and an offline license
 system with a 14-day trial.
 
 > Status: **Feature-complete and verified** — all modules built, typechecked,
-> built, end-to-end tested and booting. (`SkyTech Billing` is the product name;
+> built, end-to-end tested and booting. (`Shailee-GRMS` is the product name;
 > the codebase/db keep the internal id `ledgerline` for compatibility.)
 
 ---
@@ -62,6 +62,11 @@ npm run build:win      # produces release/<version>/LedgerLine-Setup-<version>.e
 | `npm run typecheck` | Type-check main + renderer |
 | `npm run db:generate` | Regenerate migrations after a schema change |
 | `node scripts/inspect-db.mjs` | Dump tables/seed data from the local DB (dev) |
+| `npm run demo:seed` | Load a saree-shop demo dataset into the app database |
+| `npm run demo:textile` | End-to-end proof: barcode scan → invoice → printed bill |
+| `npm run make:guide` | Rebuild the illustrated user-guide PDF |
+| `npm run build:win:signed` | Signed Windows installer (see docs/CODE-SIGNING.md) |
+| `npm run verify:signature` | Report the Authenticode status of every built exe |
 
 ---
 
@@ -228,6 +233,9 @@ Masters module already demonstrates:
 | Payments | **DONE** | receipts/payments, allocation to bills, status |
 | Reports | **DONE** | dashboard, receivables aging, sales register, GST summary |
 | Users admin UI | **DONE** | create/edit staff, roles, password reset, safe-guards |
+| Activity log (audit viewer) | **DONE** | searchable/filterable trail + CSV export (Administration → Activity Log) |
+| Textile GST bill format | **DONE** | PCS/CUT/MTS/RATE grid, pre-tax scheme, dispatch block |
+| Barcodes & POS | **DONE** | Code 128 generation, 65-up label sheets, scan-to-bill counter screen |
 | Document conversion | **DONE** | order/proforma → invoice, PO → GRN (one click) |
 | Negative-stock guard | **DONE** | optional: block invoices that exceed stock |
 | COGS / Profit & Loss | **DONE** | weighted-average cost captured per sale; gross-profit report |
@@ -235,10 +243,14 @@ Masters module already demonstrates:
 | Backup & restore UI | **DONE** | in Settings (one-click, with restart-on-restore) |
 | App icon | **DONE** | `build/icon.png` (regenerate with `npm run make:icon`) |
 | Auto-update | **DONE** | `electron-updater` wired; set `publish.url` to your host |
-| Code signing | TODO¹ | needs an EV/OV cert you purchase — not a code task |
+| Code signing | **WIRED**¹ | build scripts, timestamping and verification ready — needs a cert you purchase |
 
-¹ The app installs and runs **without** signing; a cert only removes the Windows
-SmartScreen warning. See the "code-signing certificate" section below.
+¹ Everything on the software side is done — `npm run build:win:signed`,
+SHA-256 hashing, RFC-3161 timestamping and `npm run verify:signature`. The only
+remaining step is buying a certificate, which a Certificate Authority must issue
+after verifying your business. The app installs and runs **without** signing; a
+cert only removes the Windows SmartScreen warning.
+See **[docs/CODE-SIGNING.md](docs/CODE-SIGNING.md)** for the full procedure.
 
 ### Tests
 

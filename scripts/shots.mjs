@@ -43,7 +43,7 @@ const clickByText = (txt) => `(function(){
 const FILL_SETUP = `(function(){
   function set(el,v){ el.value=v; const t=el._valueTracker; if(t)t.setValue(''); el.dispatchEvent(new Event('input',{bubbles:true})); }
   const i=[...document.querySelectorAll('input')];
-  set(i[0],'Ritwik Singh');set(i[1],'admin');set(i[2],'admin@acme.test');set(i[3],'SkyTech@123');set(i[4],'SkyTech@123');
+  set(i[0],'Ritwik Singh');set(i[1],'admin');set(i[2],'admin@acme.test');set(i[3],'Shailee@123');set(i[4],'Shailee@123');
   document.querySelector('button[type=submit]').click();return 'filled '+i.length;})()`
 
 app.whenReady().then(async () => {

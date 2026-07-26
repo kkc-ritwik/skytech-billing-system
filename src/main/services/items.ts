@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, like, or, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
-import { items, units, taxRates, itemCategories, stockLedger } from '../db/schema'
+import { items, units, taxRates, itemCategories, stockLedger, settings } from '../db/schema'
 import { itemInputSchema, type ItemInput } from '@shared/dto'
 import type { AuthUser } from '@shared/ipc'
 import { audit } from './audit'
@@ -20,6 +20,9 @@ export interface ItemListRow {
   trackInventory: boolean
   reorderLevel: number
   currentStock: number
+  barcode: string | null
+  cutLength: number
+  packing: string | null
   isActive: boolean
 }
 
@@ -56,6 +59,9 @@ export async function listItems(filter?: { search?: string; activeOnly?: boolean
       sellingPriceIsInclusive: items.sellingPriceIsInclusive,
       trackInventory: items.trackInventory,
       reorderLevel: items.reorderLevel,
+      barcode: items.barcode,
+      cutLength: items.cutLength,
+      packing: items.packing,
       isActive: items.isActive
     })
     .from(items)
@@ -90,6 +96,9 @@ export async function saveItem(input: ItemInput, user: AuthUser): Promise<string
     throw err
   }
 
+  // A typed category name wins over a raw id, and is created on first use.
+  const categoryId = data.categoryName ? await resolveCategoryId(data.categoryName) : data.categoryId || null
+
   if (data.id) {
     await db
       .update(items)
@@ -97,7 +106,7 @@ export async function saveItem(input: ItemInput, user: AuthUser): Promise<string
         sku: data.sku,
         name: data.name,
         description: data.description ?? null,
-        categoryId: data.categoryId || null,
+        categoryId,
         unitId: data.unitId || null,
         hsnCode: data.hsnCode ?? null,
         taxRateId: data.taxRateId || null,
@@ -107,6 +116,8 @@ export async function saveItem(input: ItemInput, user: AuthUser): Promise<string
         trackInventory: data.trackInventory,
         reorderLevel: data.reorderLevel,
         barcode: data.barcode ?? null,
+        cutLength: data.cutLength,
+        packing: data.packing ?? null,
         isActive: data.isActive,
         updatedAt: now
       })
@@ -121,7 +132,7 @@ export async function saveItem(input: ItemInput, user: AuthUser): Promise<string
       sku: data.sku,
       name: data.name,
       description: data.description ?? null,
-      categoryId: data.categoryId || null,
+      categoryId,
       unitId: data.unitId || null,
       hsnCode: data.hsnCode ?? null,
       taxRateId: data.taxRateId || null,
@@ -133,6 +144,8 @@ export async function saveItem(input: ItemInput, user: AuthUser): Promise<string
       openingStock: data.openingStock,
       openingStockValue: data.openingStockValue,
       barcode: data.barcode ?? null,
+      cutLength: data.cutLength,
+      packing: data.packing ?? null,
       isActive: data.isActive
     })
     .returning({ id: items.id })
@@ -163,7 +176,29 @@ export async function deleteItem(id: string, user: AuthUser): Promise<void> {
   await audit({ userId: user.id, username: user.username, action: 'item.delete', entityType: 'item', entityId: id })
 }
 
-/** Reference data for item forms (dropdowns). */
+/**
+ * Resolve a typed category name to its id, creating the category the first time
+ * it is used. Matching is case-insensitive so "Saree" and "saree" do not become
+ * two separate groups.
+ */
+async function resolveCategoryId(name: string | null | undefined): Promise<string | null> {
+  const clean = (name ?? '').trim()
+  if (!clean) return null
+
+  const existing = await getDb()
+    .select({ id: itemCategories.id, name: itemCategories.name })
+    .from(itemCategories)
+  const hit = existing.find((c) => c.name.toLowerCase() === clean.toLowerCase())
+  if (hit) return hit.id
+
+  const row = await getDb()
+    .insert(itemCategories)
+    .values({ name: clean })
+    .returning({ id: itemCategories.id })
+    .get()
+  return row.id
+}
+
 export async function itemRefs() {
   const db = getDb()
   const [u, t, c] = await Promise.all([
@@ -171,5 +206,21 @@ export async function itemRefs() {
     db.select({ id: taxRates.id, name: taxRates.name, rateBps: taxRates.rateBps }).from(taxRates).where(eq(taxRates.isActive, true)),
     db.select({ id: itemCategories.id, name: itemCategories.name }).from(itemCategories)
   ])
-  return { units: u, taxRates: t, categories: c }
+
+  // The shop's default cut travels with the item references so the New Item
+  // form can pre-fill it. Carrying it here (behind items:view) rather than
+  // reading settings directly keeps the form usable for roles that manage
+  // items but deliberately have no settings:view permission.
+  const row = await db.select().from(settings).where(eq(settings.key, 'defaultCutLength')).get()
+  let defaultCutLength = 0
+  if (row) {
+    try {
+      const parsed = JSON.parse(row.value)
+      if (typeof parsed === 'number' && Number.isFinite(parsed)) defaultCutLength = parsed
+    } catch {
+      /* a corrupt value simply means "no default" */
+    }
+  }
+
+  return { units: u, taxRates: t, categories: c, defaultCutLength }
 }

@@ -15,6 +15,7 @@ interface PartyOpt { id: string; name: string; balance?: number; creditLimit?: n
 interface ItemOpt {
   id: string; name: string; sku: string; hsnCode: string | null
   sellingPrice: number; purchasePrice: number; taxRateBps: number | null
+  cutLength?: number; packing?: string | null
 }
 interface LineRow {
   itemId: string
@@ -22,13 +23,15 @@ interface LineRow {
   expiryDate: string
   description: string
   hsnCode: string
-  quantity: string
-  unitPrice: string // rupees
+  quantity: string // PCS
+  cutLength: string // metres per piece (sales only)
+  packing: string // e.g. BOX (sales only)
+  unitPrice: string // rupees, per piece
   discount: string // rupees
   taxRateBps: number
 }
 
-const emptyLine: LineRow = { itemId: '', batchNo: '', expiryDate: '', description: '', hsnCode: '', quantity: '1', unitPrice: '', discount: '', taxRateBps: 0 }
+const emptyLine: LineRow = { itemId: '', batchNo: '', expiryDate: '', description: '', hsnCode: '', quantity: '1', cutLength: '', packing: '', unitPrice: '', discount: '', taxRateBps: 0 }
 
 export function DocumentEditor({
   mode,
@@ -60,6 +63,17 @@ export function DocumentEditor({
   const [lines, setLines] = useState<LineRow[]>([{ ...emptyLine }])
   const [saving, setSaving] = useState(false)
 
+  // ---- Trade scheme + dispatch block (sales documents only) ----
+  const [schemeLabel, setSchemeLabel] = useState('DISCOUNT')
+  const [schemePct, setSchemePct] = useState('')
+  const [dispatch, setDispatch] = useState({
+    challanNo: '', orderNo: '', agentName: '', consigneeName: '', consigneeGstin: '',
+    lrNo: '', lrDate: '', transportName: '', transportStation: '', caseNo: '',
+    weight: '', freight: '', ewayBillNo: '', transporterId: '', dueDays: ''
+  })
+  const setD = (k: keyof typeof dispatch) => (e: { target: { value: string } }): void =>
+    setDispatch((d) => ({ ...d, [k]: e.target.value }))
+
   const reset = useCallback(() => {
     setPartyId('')
     setIssueDate(new Date().toISOString().slice(0, 10))
@@ -71,6 +85,13 @@ export function DocumentEditor({
     setExtraCharges('')
     setExtraDiscount('')
     setLines([{ ...emptyLine }])
+    setSchemeLabel('DISCOUNT')
+    setSchemePct('')
+    setDispatch({
+      challanNo: '', orderNo: '', agentName: '', consigneeName: '', consigneeGstin: '',
+      lrNo: '', lrDate: '', transportName: '', transportStation: '', caseNo: '',
+      weight: '', freight: '', ewayBillNo: '', transporterId: '', dueDays: ''
+    })
   }, [])
 
   useEffect(() => {
@@ -103,11 +124,34 @@ export function DocumentEditor({
                 description: l.description,
                 hsnCode: l.hsnCode ?? '',
                 quantity: String(l.quantity),
+                cutLength: l.cutLength ? String(l.cutLength) : '',
+                packing: l.packing ?? '',
                 unitPrice: String(toRupees(l.unitPrice)),
                 discount: l.discountAmount ? String(toRupees(l.discountAmount)) : '',
                 taxRateBps: l.taxRateBps
               }))
             )
+            if (isSales) {
+              setSchemeLabel(doc.schemeLabel ?? 'DISCOUNT')
+              setSchemePct(doc.schemePct ? String(doc.schemePct / 100) : '')
+              setDispatch({
+                challanNo: doc.challanNo ?? '',
+                orderNo: doc.orderNo ?? '',
+                agentName: doc.agentName ?? '',
+                consigneeName: doc.consigneeName ?? '',
+                consigneeGstin: doc.consigneeGstin ?? '',
+                lrNo: doc.lrNo ?? '',
+                lrDate: doc.lrDate ? new Date(doc.lrDate).toISOString().slice(0, 10) : '',
+                transportName: doc.transportName ?? '',
+                transportStation: doc.transportStation ?? '',
+                caseNo: doc.caseNo ?? '',
+                weight: doc.weight ? String(doc.weight) : '',
+                freight: doc.freight ? String(toRupees(doc.freight)) : '',
+                ewayBillNo: doc.ewayBillNo ?? '',
+                transporterId: doc.transporterId ?? '',
+                dueDays: doc.dueDays ? String(doc.dueDays) : ''
+              })
+            }
           }
         } else {
           reset()
@@ -123,11 +167,14 @@ export function DocumentEditor({
     unitPrice: toPaise(l.unitPrice || '0'),
     discountAmount: toPaise(l.discount || '0'),
     discountPct: 0,
-    taxRateBps: l.taxRateBps
+    taxRateBps: l.taxRateBps,
+    cutLength: Number(l.cutLength || 0)
   }))
+  const schemeBps = isSales ? Math.round(Number(schemePct || 0) * 100) : 0
   const { lines: computed, totals } = computeDocument(lineInputs, isInterState, {
     extraCharges: toPaise(extraCharges || '0'),
-    extraDiscount: toPaise(extraDiscount || '0')
+    extraDiscount: toPaise(extraDiscount || '0'),
+    schemePct: schemeBps
   })
 
   // Credit-limit warning (sales only): projected outstanding vs the party's limit.
@@ -159,7 +206,10 @@ export function DocumentEditor({
       description: it.name,
       hsnCode: it.hsnCode ?? '',
       unitPrice: String(toRupees(isSales ? it.sellingPrice : it.purchasePrice)),
-      taxRateBps: it.taxRateBps ?? 0
+      taxRateBps: it.taxRateBps ?? 0,
+      // Carry the item's cut/packing so MTS is right without extra typing.
+      cutLength: it.cutLength ? String(it.cutLength) : '',
+      packing: it.packing ?? ''
     })
   }
 
@@ -195,9 +245,31 @@ export function DocumentEditor({
           referenceNo: reference || null,
           isInterState,
           ...extras,
+          schemeLabel: schemeLabel || null,
+          schemePct: schemeBps,
+          challanNo: dispatch.challanNo || null,
+          orderNo: dispatch.orderNo || null,
+          agentName: dispatch.agentName || null,
+          consigneeName: dispatch.consigneeName || null,
+          consigneeGstin: dispatch.consigneeGstin || null,
+          lrNo: dispatch.lrNo || null,
+          lrDate: dispatch.lrDate ? new Date(dispatch.lrDate).getTime() : null,
+          transportName: dispatch.transportName || null,
+          transportStation: dispatch.transportStation || null,
+          caseNo: dispatch.caseNo || null,
+          weight: Number(dispatch.weight || 0),
+          freight: toPaise(dispatch.freight || '0'),
+          ewayBillNo: dispatch.ewayBillNo || null,
+          transporterId: dispatch.transporterId || null,
+          dueDays: Number(dispatch.dueDays || 0),
           notes: notes || null,
           termsAndConditions: null,
-          lines: baseLines
+          // Sales lines additionally carry the textile presentation fields.
+          lines: lines.map((l, i) => ({
+            ...baseLines[i],
+            cutLength: Number(l.cutLength || 0),
+            packing: l.packing || null
+          }))
         }
         await invoke('sales:save', payload)
       } else {
@@ -281,7 +353,9 @@ export function DocumentEditor({
           <thead>
             <tr className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
               <th className="p-2 text-left">Item / Description</th>
-              <th className="p-2 text-right">Qty</th>
+              <th className="p-2 text-right">{isSales ? 'Pcs' : 'Qty'}</th>
+              {isSales && <th className="p-2 text-right">Cut</th>}
+              {isSales && <th className="p-2 text-right">Mts</th>}
               <th className="p-2 text-right">Rate</th>
               <th className="p-2 text-right">Disc</th>
               <th className="p-2 text-right">Tax%</th>
@@ -301,9 +375,22 @@ export function DocumentEditor({
                   <div className="mt-1 flex gap-1">
                     <Input value={l.batchNo} onChange={(e) => setLine(i, { batchNo: e.target.value })} placeholder="Batch (optional)" className="h-7 text-xs" />
                     <Input type="date" value={l.expiryDate} onChange={(e) => setLine(i, { expiryDate: e.target.value })} title="Expiry" className="h-7 w-32 text-xs" />
+                    {isSales && (
+                      <Input value={l.packing} onChange={(e) => setLine(i, { packing: e.target.value })} placeholder="Packing" title="Packing (e.g. BOX)" className="h-7 w-24 text-xs" />
+                    )}
                   </div>
                 </td>
                 <td className="p-1.5 w-20"><Input className="h-8 text-right" type="number" step="0.01" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} /></td>
+                {isSales && (
+                  <td className="p-1.5 w-20">
+                    <Input className="h-8 text-right" type="number" step="0.01" placeholder="6.30" value={l.cutLength} onChange={(e) => setLine(i, { cutLength: e.target.value })} />
+                  </td>
+                )}
+                {isSales && (
+                  <td className="p-1.5 w-20 text-right text-muted-foreground tabular-nums">
+                    {computed[i]?.metres ? computed[i].metres.toFixed(2) : '—'}
+                  </td>
+                )}
                 <td className="p-1.5 w-28"><Input className="h-8 text-right" type="number" step="0.01" value={l.unitPrice} onChange={(e) => setLine(i, { unitPrice: e.target.value })} /></td>
                 <td className="p-1.5 w-24"><Input className="h-8 text-right" type="number" step="0.01" value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></td>
                 <td className="p-1.5 w-20">
@@ -337,9 +424,23 @@ export function DocumentEditor({
           <Input type="number" step="0.01" placeholder="0.00" value={extraDiscount} onChange={(e) => setExtraDiscount(e.target.value)} className="h-9 text-right" />
         </div>
 
+        {isSales && (
+          <div className="grid w-80 grid-cols-2 gap-2">
+            <div className="col-span-2 text-xs font-medium uppercase text-muted-foreground">
+              Scheme / discount (applied before GST)
+            </div>
+            <Input placeholder="Label (DISCOUNT / SCHEME)" value={schemeLabel} onChange={(e) => setSchemeLabel(e.target.value)} className="h-9" />
+            <Input type="number" step="0.01" placeholder="%" value={schemePct} onChange={(e) => setSchemePct(e.target.value)} className="h-9 text-right" />
+          </div>
+        )}
+
         <div className="w-64 space-y-1 text-sm">
-          <Row label="Subtotal" value={formatINR(totals.subTotal)} />
+          <Row label={isSales ? `Sub total (${totals.totalPcs} pcs, ${totals.totalMetres} mts)` : 'Subtotal'} value={formatINR(totals.subTotal)} />
           {totals.discountTotal > 0 && <Row label="Discount" value={`- ${formatINR(totals.discountTotal)}`} />}
+          {totals.schemeAmount > 0 && (
+            <Row label={`${schemeLabel || 'DISCOUNT'} @ ${Number(schemePct)}%`} value={`- ${formatINR(totals.schemeAmount)}`} />
+          )}
+          {totals.schemeAmount > 0 && <Row label="Taxable value" value={formatINR(totals.taxableValue)} />}
           {isInterState ? (
             <Row label="IGST" value={formatINR(totals.igstTotal)} />
           ) : (
@@ -357,11 +458,48 @@ export function DocumentEditor({
         </div>
       </div>
 
+      {isSales && (
+        <details className="mt-4 rounded-lg border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Dispatch &amp; transport details (printed on the bill)
+          </summary>
+          <div className="mt-3 grid grid-cols-4 gap-3">
+            <Field label="Challan no"><Input value={dispatch.challanNo} onChange={setD('challanNo')} /></Field>
+            <Field label="Order no"><Input value={dispatch.orderNo} onChange={setD('orderNo')} /></Field>
+            <Field label="Agent"><Input value={dispatch.agentName} onChange={setD('agentName')} /></Field>
+            <Field label="Due days"><Input type="number" value={dispatch.dueDays} onChange={setD('dueDays')} /></Field>
+
+            <Field label="Consignee"><Input value={dispatch.consigneeName} onChange={setD('consigneeName')} /></Field>
+            <Field label="Consignee GSTIN"><Input value={dispatch.consigneeGstin} onChange={setD('consigneeGstin')} /></Field>
+            <Field label="L.R. no"><Input value={dispatch.lrNo} onChange={setD('lrNo')} /></Field>
+            <Field label="L.R. date"><Input type="date" value={dispatch.lrDate} onChange={setD('lrDate')} /></Field>
+
+            <Field label="Transport"><Input value={dispatch.transportName} onChange={setD('transportName')} /></Field>
+            <Field label="Station"><Input value={dispatch.transportStation} onChange={setD('transportStation')} /></Field>
+            <Field label="Case no"><Input value={dispatch.caseNo} onChange={setD('caseNo')} placeholder="37x1" /></Field>
+            <Field label="Weight"><Input type="number" step="0.001" value={dispatch.weight} onChange={setD('weight')} /></Field>
+
+            <Field label="Freight ₹"><Input type="number" step="0.01" value={dispatch.freight} onChange={setD('freight')} /></Field>
+            <Field label="E-Way bill no"><Input value={dispatch.ewayBillNo} onChange={setD('ewayBillNo')} /></Field>
+            <Field label="Transporter ID"><Input value={dispatch.transporterId} onChange={setD('transporterId')} /></Field>
+          </div>
+        </details>
+      )}
+
       <div className="mt-4 space-y-1.5">
         <Label>Notes</Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
     </Dialog>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      {children}
+    </div>
   )
 }
 

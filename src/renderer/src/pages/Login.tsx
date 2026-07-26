@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Loader2, Receipt, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft } from 'lucide-react'
 import { useApp } from '@renderer/store/app'
 import { toast } from '@renderer/store/toast'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { CHANNELS } from '@shared/ipc'
-import { PRODUCT_NAME, COMPANY_NAME, TAGLINE } from '@shared/app-config'
+import { PRODUCT_NAME, COMPANY_NAME, TAGLINE, PRODUCT_SUBTITLE } from '@shared/app-config'
+import { BrandMark } from '@renderer/components/BrandMark'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -66,12 +67,13 @@ export function Login(): JSX.Element {
   return (
     <div className="flex min-h-screen">
       {/* Brand panel */}
-      <div className="hidden w-1/2 flex-col justify-between bg-gradient-to-br from-primary to-blue-700 p-12 text-primary-foreground lg:flex">
+      <div className="hidden w-1/2 flex-col justify-between bg-gradient-to-br from-[#3F1F63] via-primary to-[#C2186B] p-12 text-primary-foreground lg:flex">
         <div className="flex items-center gap-2 text-lg font-semibold">
-          <Receipt className="size-6" /> {PRODUCT_NAME}
+          <BrandMark size={34} /> {PRODUCT_NAME}
         </div>
         <div>
           <h1 className="text-4xl font-bold leading-tight">{TAGLINE}</h1>
+          <p className="mt-2 text-sm uppercase tracking-widest opacity-80">{PRODUCT_SUBTITLE}</p>
           <p className="mt-4 max-w-md text-primary-foreground/80">
             GST invoicing, stock control, purchase & sales, payments and reports — all offline, all
             on your machine, all yours.
@@ -84,7 +86,7 @@ export function Login(): JSX.Element {
       <div className="flex w-full items-center justify-center p-6 lg:w-1/2">
         <div className="w-full max-w-sm">
           <p className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-primary lg:hidden">
-            <Receipt className="size-4" /> {PRODUCT_NAME}
+            <BrandMark size={22} /> {PRODUCT_NAME}
           </p>
 
           {mode === 'login' ? (

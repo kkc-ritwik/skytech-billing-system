@@ -1,4 +1,4 @@
-// Generates SkyTech-Billing-User-Guide.pdf from an HTML manual using Electron's
+// Generates Shailee-GRMS-User-Guide.pdf from an HTML manual using Electron's
 // renderer (printToPDF). Run: npm run make:docs
 import { app, BrowserWindow } from 'electron'
 import { writeFileSync } from 'fs'
@@ -36,16 +36,16 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
 
 <div class="cover">
   <div class="logo">🧾</div>
-  <h1>SkyTech Billing</h1>
-  <div class="tag">Billing that reaches new heights</div>
+  <h1>Shailee-GRMS</h1>
+  <div class="tag">Manage Fashion. Grow Your Business.</div>
   <div class="meta">User Guide &amp; Demo Walkthrough · Version 0.1.0</div>
-  <div class="meta" style="margin-top:40px">by SkyTech Developments</div>
+  <div class="meta" style="margin-top:40px">by Shailee Developments</div>
   <div class="meta">${EMAIL} · ${PHONE}</div>
 </div>
 
 <div class="section">
-  <h1>1. What is SkyTech Billing?</h1>
-  <p><b>SkyTech Billing</b> is an offline, Windows desktop application for GST billing
+  <h1>1. What is Shailee-GRMS?</h1>
+  <p><b>Shailee-GRMS</b> is an offline, Windows desktop application for GST billing
   and inventory management — built for distributors and suppliers (e.g. selling to
   schools &amp; colleges). All data is stored locally on the user's PC; no internet
   is required for daily use.</p>
@@ -60,7 +60,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   </ul>
 
   <h2>2. Installation &amp; first run</h2>
-  <div class="step"><b>Step 1.</b> Run <code>SkyTech-Billing-Setup-0.1.0.exe</code>. If Windows shows
+  <div class="step"><b>Step 1.</b> Run <code>Shailee-GRMS-Setup-0.1.0.exe</code>. If Windows shows
   "Windows protected your PC", click <b>More info → Run anyway</b> (the app is safe; this
   appears for software that isn't code-signed yet).</div>
   <div class="step"><b>Step 2.</b> On first launch you create the first account.</div>
@@ -69,12 +69,12 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     <tr><td>Full name</td><td>Ritwik Singh</td></tr>
     <tr><td>Username</td><td>admin</td></tr>
     <tr><td>Email</td><td>you@yourbusiness.com</td></tr>
-    <tr><td>Password</td><td>SkyTech@123</td></tr>
+    <tr><td>Password</td><td>Shailee@123</td></tr>
   </table>
   <div class="step"><b>Step 3.</b> After creating the account you'll see a one-time
   <b>recovery code</b> (e.g. <code>KUYK-AW9G-2D63-GX3C</code>). <b>Write it down</b> — it's the only
   way to reset your password if you forget it (offline app, so there's no email reset).</div>
-  <div class="warn"><b>For SkyTech (vendor) only:</b> click <b>Advanced setup</b> and enter your
+  <div class="warn"><b>For Shailee (vendor) only:</b> click <b>Advanced setup</b> and enter your
   private <b>vendor setup code</b> to create a <b>Super Admin</b>. Customers leave this blank and
   become <b>Admin</b> (full business control, but not Super Admin). Keep the code secret.</div>
 
@@ -90,7 +90,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   <h2>3. Roles &amp; access</h2>
   <table>
     <tr><th>Role</th><th>Who</th><th>Can do</th></tr>
-    <tr><td>Super Admin</td><td>SkyTech (you)</td><td>Everything + reserved vendor controls. Created only with the setup code.</td></tr>
+    <tr><td>Super Admin</td><td>Shailee (you)</td><td>Everything + reserved vendor controls. Created only with the setup code.</td></tr>
     <tr><td>Admin</td><td>Customer's owner</td><td>Full business, manage staff users, activate the license. Cannot create Super Admins.</td></tr>
     <tr><td>Manager</td><td>Senior staff</td><td>Operate + financial reports + approvals.</td></tr>
     <tr><td>Operator</td><td>Data-entry staff</td><td>Day-to-day billing, stock and payments only.</td></tr>
@@ -104,14 +104,14 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   days the app locks to an activation screen until a license key is entered.</p>
   <h3>How a customer activates</h3>
   <div class="step"><b>1.</b> Open <b>License</b> (or the activation screen) and copy the <b>Machine ID</b>.</div>
-  <div class="step"><b>2.</b> Send it to SkyTech with payment: <b>${EMAIL}</b> / <b>${PHONE}</b>.</div>
-  <div class="step"><b>3.</b> SkyTech sends back a key; paste it and click <b>Activate</b>. Works offline, instantly.</div>
+  <div class="step"><b>2.</b> Send it to Shailee with payment: <b>${EMAIL}</b> / <b>${PHONE}</b>.</div>
+  <div class="step"><b>3.</b> Shailee sends back a key; paste it and click <b>Activate</b>. Works offline, instantly.</div>
   <div class="note">The key is <b>bound to that one computer</b> and cannot be reused elsewhere.
-  Only SkyTech can create keys (they are cryptographically signed) — customers can only activate.</div>
+  Only Shailee can create keys (they are cryptographically signed) — customers can only activate.</div>
   <h3>Moving to a new PC (transfer)</h3>
   <p>On the old PC: <b>License → Deactivate this device</b> → note the confirmation code and send
-  it to SkyTech. On the new PC: install, <b>restore your backup</b> (below), then activate the new key.</p>
-  <h3>Issuing keys (SkyTech only)</h3>
+  it to Shailee. On the new PC: install, <b>restore your backup</b> (below), then activate the new key.</p>
+  <h3>Issuing keys (Shailee only)</h3>
   <p>Run the admin portal: <code>npm run portal</code> → open <code>http://localhost:8787</code> →
   paste the customer's Machine ID → choose validity → generate the key.</p>
 </div>
@@ -129,7 +129,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   <h3>Users</h3><p>Create and manage staff accounts and their roles (with safeguards: can't remove the last admin, etc.).</p>
   <h3>License</h3><p>View status/expiry/Machine ID, activate a key, or deactivate to transfer.</p>
   <h3>Settings</h3><p>Company profile + <b>logo</b> (shown on invoices), bank/UPI details, invoice paper size, prevent-negative-stock toggle, and <b>backup/restore + automatic backups</b>.</p>
-  <h3>Help &amp; Support</h3><p>App version &amp; license, your <b>Machine ID</b>, SkyTech contact (email / phone / WhatsApp), and shortcuts to open your <b>data &amp; backups folder</b> and <b>logs folder</b>.</p>
+  <h3>Help &amp; Support</h3><p>App version &amp; license, your <b>Machine ID</b>, Shailee contact (email / phone / WhatsApp), and shortcuts to open your <b>data &amp; backups folder</b> and <b>logs folder</b>.</p>
 </div>
 
 <div class="section">
@@ -240,12 +240,12 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   </ul>
 
   <h1>9. Support</h1>
-  <p>SkyTech Developments — we issue licenses and help with setup.</p>
+  <p>Shailee Developments — we issue licenses and help with setup.</p>
   <table>
     <tr><th>Email</th><td>${EMAIL}</td></tr>
     <tr><th>Phone</th><td>${PHONE}</td></tr>
   </table>
-  <p style="margin-top:30px; color:#94a3b8; font-size:10px;">© 2026 SkyTech Developments. SkyTech Billing — Billing that reaches new heights.</p>
+  <p style="margin-top:30px; color:#94a3b8; font-size:10px;">© 2026 Shailee Developments. Shailee-GRMS — Manage Fashion. Grow Your Business..</p>
 </div>
 
 </body></html>`
@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
   await new Promise((r) => setTimeout(r, 600))
   const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
-  const out = join(root, 'SkyTech-Billing-User-Guide.pdf')
+  const out = join(root, 'Shailee-GRMS-User-Guide.pdf')
   writeFileSync(out, pdf)
   console.log('Wrote', out, `(${(pdf.length / 1024).toFixed(0)} KB)`)
   app.quit()

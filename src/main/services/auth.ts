@@ -70,7 +70,7 @@ function normalizeRecovery(code: string): string {
 
 /**
  * Creates the first account on first run. Becomes **Super Admin** only when the
- * vendor setup code is supplied (you, SkyTech); otherwise an **Admin** — the
+ * vendor setup code is supplied (you, the vendor); otherwise an **Admin** — the
  * customer's business owner.
  */
 export async function bootstrap(input: {

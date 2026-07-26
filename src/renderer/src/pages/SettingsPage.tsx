@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, Save, Building2, CreditCard, SlidersHorizontal, DatabaseBackup, ImageIcon, Trash2 } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { useApp } from '@renderer/store/app'
 import type { CompanyInput } from '@shared/dto'
 import { CHANNELS } from '@shared/ipc'
@@ -25,7 +26,25 @@ export function SettingsPage(): JSX.Element {
   const canManage = useApp((s) => s.has('settings:manage'))
   const canBackup = useApp((s) => s.has('backup:manage'))
   const [form, setForm] = useState<Form>(emptyForm)
-  const [prefs, setPrefs] = useState<{ paperSize: string; preventNegativeStock: boolean }>({ paperSize: 'A4', preventNegativeStock: false })
+  const [prefs, setPrefs] = useState<{
+    paperSize: string
+    preventNegativeStock: boolean
+    invoiceTemplate: string
+    invoiceInvocation: string
+    defaultSchemeLabel: string
+    defaultSchemePct: number
+    defaultCutLength: number
+    defaultTransportName: string
+  }>({
+    paperSize: 'A4',
+    preventNegativeStock: false,
+    invoiceTemplate: 'standard',
+    invoiceInvocation: '',
+    defaultSchemeLabel: 'DISCOUNT',
+    defaultSchemePct: 0,
+    defaultCutLength: 0,
+    defaultTransportName: ''
+  })
   const [logo, setLogo] = useState<string | null>(null)
   const [autoBackup, setAutoBackup] = useState<{ dir: string | null; lastAt: number | null }>({ dir: null, lastAt: null })
   const [loading, setLoading] = useState(true)
@@ -45,7 +64,16 @@ export function SettingsPage(): JSX.Element {
           for (const k of Object.keys(emptyForm) as (keyof Form)[]) next[k] = c[k] ?? ''
           setForm(next)
         }
-        setPrefs({ paperSize: s?.paperSize ?? 'A4', preventNegativeStock: !!s?.preventNegativeStock })
+        setPrefs({
+          paperSize: s?.paperSize ?? 'A4',
+          preventNegativeStock: !!s?.preventNegativeStock,
+          invoiceTemplate: (s?.invoiceTemplate as string) ?? 'standard',
+          invoiceInvocation: (s?.invoiceInvocation as string) ?? '',
+          defaultSchemeLabel: (s?.defaultSchemeLabel as string) ?? 'DISCOUNT',
+          defaultSchemePct: (s?.defaultSchemePct as number) ?? 0,
+          defaultCutLength: (s?.defaultCutLength as number) ?? 0,
+          defaultTransportName: (s?.defaultTransportName as string) ?? ''
+        })
         setLogo(l?.dataUrl ?? null)
       } catch (err) {
         toast.error(err instanceof ApiError ? err.message : 'Failed to load settings.')
@@ -102,7 +130,15 @@ export function SettingsPage(): JSX.Element {
   }
 
   async function restore(): Promise<void> {
-    if (!confirm('Restoring overwrites ALL current data and restarts the app. Continue?')) return
+    const ok = await confirmAction({
+      title: 'Restore from backup?',
+      message:
+        'This replaces ALL current data with the contents of the backup and restarts the app. ' +
+        'Anything entered since that backup was taken will be lost.',
+      confirmLabel: 'Overwrite & restore',
+      destructive: true
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await invoke(CHANNELS.backupRestore)
@@ -242,6 +278,16 @@ export function SettingsPage(): JSX.Element {
                 <option value="A5">A5</option>
               </Select>
             </Field>
+            <Field label="Invoice template">
+              <Select
+                value={prefs.invoiceTemplate}
+                onChange={(e) => void savePrefs({ invoiceTemplate: e.target.value })}
+                disabled={!canManage}
+              >
+                <option value="standard">Standard GST</option>
+                <option value="textile">Textile GST (PCS / CUT / MTS)</option>
+              </Select>
+            </Field>
             <div className="col-span-2">
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="size-4" checked={prefs.preventNegativeStock}
@@ -249,6 +295,57 @@ export function SettingsPage(): JSX.Element {
                 Prevent negative stock — block an invoice if there isn't enough inventory
               </label>
             </div>
+
+            {prefs.invoiceTemplate === 'textile' && (
+              <>
+                <div className="col-span-2 border-t pt-3 text-xs font-medium uppercase text-muted-foreground">
+                  Textile bill defaults
+                </div>
+                <Field label="Invocation line (printed above the firm name)">
+                  <Input
+                    defaultValue={prefs.invoiceInvocation}
+                    placeholder="Shree Ganeshaya Namah"
+                    disabled={!canManage}
+                    onBlur={(e) => void savePrefs({ invoiceInvocation: e.target.value })}
+                  />
+                </Field>
+                <Field label="Default transport">
+                  <Input
+                    defaultValue={prefs.defaultTransportName}
+                    placeholder="ANCHAL LOGISTICS"
+                    disabled={!canManage}
+                    onBlur={(e) => void savePrefs({ defaultTransportName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Default scheme label">
+                  <Input
+                    defaultValue={prefs.defaultSchemeLabel}
+                    placeholder="DISCOUNT"
+                    disabled={!canManage}
+                    onBlur={(e) => void savePrefs({ defaultSchemeLabel: e.target.value })}
+                  />
+                </Field>
+                <Field label="Default scheme %">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    defaultValue={prefs.defaultSchemePct / 100}
+                    disabled={!canManage}
+                    onBlur={(e) => void savePrefs({ defaultSchemePct: Math.round(Number(e.target.value || 0) * 100) })}
+                  />
+                </Field>
+                <Field label="Default cut (metres per piece)">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    defaultValue={prefs.defaultCutLength}
+                    placeholder="6.30"
+                    disabled={!canManage}
+                    onBlur={(e) => void savePrefs({ defaultCutLength: Number(e.target.value || 0) })}
+                  />
+                </Field>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -279,7 +376,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Moving to a new PC? Create a backup here, install SkyTech Billing there, then use
+                Moving to a new PC? Create a backup here, install Shailee-GRMS there, then use
                 <strong> Restore from backup</strong>. Your license is per-computer — deactivate on the
                 old PC (License page) and we'll issue a key for the new one.
               </p>

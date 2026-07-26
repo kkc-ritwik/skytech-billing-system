@@ -49,6 +49,31 @@ export const salesDocuments = sqliteTable(
     roundOff: integer('round_off').notNull().default(0),
     grandTotal: integer('grand_total').notNull().default(0),
 
+    // ---- Invoice-level trade scheme, applied BEFORE tax ----
+    // Printed on the bill as "DISCOUNT -> 52126.00 X -2.00 % : -1,042.52" (the
+    // label is the trader's wording: DISCOUNT, SCHEME, ...). GST is charged on
+    // the value net of this, so it cannot reuse the post-tax extraDiscount.
+    schemeLabel: text('scheme_label'),
+    schemePct: integer('scheme_pct').notNull().default(0), // basis points, 200 = 2.00%
+    schemeAmount: integer('scheme_amount').notNull().default(0), // paise, derived
+
+    // ---- Dispatch / transport block printed on the invoice head ----
+    challanNo: text('challan_no'),
+    orderNo: text('order_no'),
+    agentName: text('agent_name'),
+    consigneeName: text('consignee_name'),
+    consigneeGstin: text('consignee_gstin'),
+    lrNo: text('lr_no'),
+    lrDate: integer('lr_date', { mode: 'timestamp_ms' }),
+    transportName: text('transport_name'),
+    transportStation: text('transport_station'),
+    caseNo: text('case_no'),
+    weight: real('weight').notNull().default(0),
+    freight: integer('freight').notNull().default(0), // paise
+    ewayBillNo: text('eway_bill_no'),
+    transporterId: text('transporter_id'),
+    dueDays: integer('due_days').notNull().default(0),
+
     // Payment tracking (invoices / sales_returns). paidAmount is maintained in
     // the same transaction as payment allocations.
     paidAmount: integer('paid_amount').notNull().default(0),
@@ -80,7 +105,12 @@ export const salesDocumentLines = sqliteTable(
     hsnCode: text('hsn_code'),
     batchNo: text('batch_no'),
     expiryDate: integer('expiry_date', { mode: 'timestamp_ms' }),
+    // PCS on the printed bill. `unitPrice` is the RATE **per piece**, so
+    // lineTotal = quantity x unitPrice (metres never enter the money math).
     quantity: real('quantity').notNull(),
+    // Metres in one piece; MTS on the bill is derived as quantity x cutLength.
+    cutLength: real('cut_length').notNull().default(0),
+    packing: text('packing'),
     unitPrice: integer('unit_price').notNull(), // paise, exclusive of tax
     discountPct: integer('discount_pct').notNull().default(0), // basis points
     discountAmount: integer('discount_amount').notNull().default(0), // paise

@@ -10,6 +10,7 @@ import { cleanupExpiredSessions } from './services/auth'
 import { installCrashHandlers, log } from './services/logger'
 import { loadWindowState, saveWindowState } from './services/window-state'
 import { registerAllRoutes } from './ipc'
+import { PRODUCT_NAME } from '@shared/app-config'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -38,7 +39,7 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,
-    title: 'SkyTech Billing',
+    title: PRODUCT_NAME,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -114,7 +115,7 @@ function startApp(): void {
       log('error', 'backend bootstrap failed', err)
       const choice = dialog.showMessageBoxSync({
         type: 'error',
-        title: 'SkyTech Billing — startup error',
+        title: `${PRODUCT_NAME} — startup error`,
         message: 'The application could not start its database.',
         detail:
           (err instanceof Error ? err.message : String(err)) +

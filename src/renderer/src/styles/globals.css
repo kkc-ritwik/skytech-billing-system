@@ -4,52 +4,56 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    --background: 300 20% 98%;
+    --foreground: 271 30% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 94%;
-    --accent-foreground: 222 47% 11%;
+    --card-foreground: 271 30% 14%;
+    /* Shailee-GRMS brand: deep purple primary, magenta accent. */
+    --primary: 271 52% 37%;
+    --primary-foreground: 300 40% 99%;
+    --secondary: 290 30% 96%;
+    --secondary-foreground: 271 45% 20%;
+    --muted: 290 25% 96%;
+    --muted-foreground: 280 10% 45%;
+    --accent: 322 70% 96%;
+    --accent-foreground: 322 65% 30%;
+    --brand-magenta: 331 78% 43%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
+    --border: 290 22% 90%;
+    --input: 290 22% 90%;
+    --ring: 271 52% 37%;
     --radius: 0.6rem;
   }
 
   .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 14%;
-    --card-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 18%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 20%;
-    --accent-foreground: 210 40% 98%;
+    --background: 274 30% 10%;
+    --foreground: 300 20% 97%;
+    --card: 274 28% 14%;
+    --card-foreground: 300 20% 97%;
+    /* Lifted for contrast on a dark surface. */
+    --primary: 291 62% 63%;
+    --primary-foreground: 274 40% 10%;
+    --secondary: 274 24% 20%;
+    --secondary-foreground: 300 20% 97%;
+    --muted: 274 24% 20%;
+    --muted-foreground: 285 14% 66%;
+    --accent: 322 35% 24%;
+    --accent-foreground: 322 80% 88%;
+    --brand-magenta: 331 74% 60%;
     --destructive: 0 63% 50%;
     --destructive-foreground: 210 40% 98%;
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    --border: 217 33% 24%;
-    --input: 217 33% 24%;
-    --ring: 217 91% 60%;
+    --border: 274 22% 26%;
+    --input: 274 22% 26%;
+    --ring: 291 62% 63%;
   }
 
   * {

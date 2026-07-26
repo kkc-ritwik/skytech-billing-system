@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react'
 import { useApp } from './store/app'
 import { PRODUCT_NAME, TAGLINE } from '@shared/app-config'
 import { Toaster } from './components/Toaster'
+import { ConfirmHost } from './components/ConfirmHost'
 import { BootstrapSetup } from './pages/BootstrapSetup'
 import { Login } from './pages/Login'
 import { LicenseLocked } from './pages/LicenseLocked'
@@ -52,6 +53,7 @@ export function App(): JSX.Element {
     <>
       {body}
       <Toaster />
+      <ConfirmHost />
     </>
   )
 }

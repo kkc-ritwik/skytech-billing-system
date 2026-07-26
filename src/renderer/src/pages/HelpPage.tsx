@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Receipt, Mail, Phone, Globe, FolderOpen, FileText, Copy, Info, LifeBuoy } from 'lucide-react'
+import { Mail, Phone, Globe, FolderOpen, FileText, Copy, Info, LifeBuoy } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
 import { useApp } from '@renderer/store/app'
 import { CHANNELS } from '@shared/ipc'
 import { PRODUCT_NAME, COMPANY_NAME, TAGLINE, SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_WEBSITE, editionLabel } from '@shared/app-config'
 import { PageHeader } from '@renderer/components/PageHeader'
+import { BrandMark } from '@renderer/components/BrandMark'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
@@ -41,7 +42,7 @@ export function HelpPage(): JSX.Element {
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center gap-3">
               <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                <Receipt className="size-6" />
+                <BrandMark size={40} />
               </div>
               <div>
                 <div className="text-base font-bold">{PRODUCT_NAME}</div>
@@ -80,7 +81,7 @@ export function HelpPage(): JSX.Element {
             <a href={`tel:${phoneDigits}`} className="flex items-center gap-2 font-medium text-primary hover:underline"><Phone className="size-4" /> {SUPPORT_PHONE}</a>
             <a href={`https://${SUPPORT_WEBSITE}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-medium text-primary hover:underline"><Globe className="size-4" /> {SUPPORT_WEBSITE}</a>
             <a
-              href={`https://wa.me/${phoneDigits.replace('+', '')}?text=${encodeURIComponent('Hi SkyTech, I need help with SkyTech Billing.')}`}
+              href={`https://wa.me/${phoneDigits.replace('+', '')}?text=${encodeURIComponent(`Hi, I need help with ${PRODUCT_NAME}.`)}`}
               target="_blank"
               rel="noreferrer"
               className="mt-1 inline-flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 font-medium text-success hover:bg-success/20"

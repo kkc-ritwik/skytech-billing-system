@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SkyTech Billing — license key signer (ADMIN/PORTAL SIDE ONLY).
+ * Shailee-GRMS — license key signer (ADMIN/PORTAL SIDE ONLY).
  *
  * This script signs activation keys with your PRIVATE key. NEVER ship it or the
  * private key with the desktop app. Keep license-signing-key.private.pem secret.

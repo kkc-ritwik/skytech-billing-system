@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(root, 'release', 'brochure')
 mkdirSync(outDir, { recursive: true })
 
-const dbPath = join(tmpdir(), `skytech-cap-${Date.now()}.db`)
+const dbPath = join(tmpdir(), `shailee-cap-${Date.now()}.db`)
 for (const s of ['', '-wal', '-shm']) if (existsSync(dbPath + s)) rmSync(dbPath + s)
 process.env.LEDGERLINE_DB_PATH = dbPath
 
@@ -48,7 +48,7 @@ const SEED = `(async () => {
   const api = window.api
   const call = async (ch, p) => { const r = await api.invoke(ch, p); if (!r.ok) throw new Error(ch+': '+r.error); return r.data }
   const P = (r) => Math.round(r * 100)
-  const bs = await call('auth:bootstrap', { fullName:'Ritwik Singh', username:'admin', password:'SkyTech@123' })
+  const bs = await call('auth:bootstrap', { fullName:'Ritwik Singh', username:'admin', password:'Shailee@123' })
   api.setToken(bs.session.token); localStorage.setItem('ll_token', bs.session.token)
   await call('settings:company:save', { legalName:'Acme School Supplies Pvt Ltd', tradeName:'Acme School Supplies', gstin:'07AABCA1234A1Z5', pan:'AABCA1234A', addressLine1:'12, Industrial Area, Phase 1', addressLine2:null, city:'New Delhi', state:'Delhi', stateCode:'07', pincode:'110001', phone:'011-40001234', email:'sales@acmeschool.in', website:'acmeschool.in', bankName:'HDFC Bank', bankAccountNo:'50100123456789', bankIfsc:'HDFC0000123', bankBranch:'Connaught Place', upiId:'acme@hdfcbank', defaultTermsAndConditions:'1. Goods once sold are not returnable. 2. Payment due within 30 days.' })
   await call('settings:logo:pick', undefined)

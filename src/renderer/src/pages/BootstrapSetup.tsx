@@ -69,11 +69,11 @@ export function BootstrapSetup(): JSX.Element {
               </Field>
             </div>
             {showAdvanced ? (
-              <Field label="SkyTech setup code (vendor only — leave blank)">
+              <Field label="Vendor setup code (leave blank)">
                 <Input
                   value={form.setupCode}
                   onChange={update('setupCode')}
-                  placeholder="Only SkyTech enters this"
+                  placeholder="Only the vendor enters this"
                   autoComplete="off"
                 />
               </Field>

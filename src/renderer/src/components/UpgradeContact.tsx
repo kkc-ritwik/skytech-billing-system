@@ -3,7 +3,7 @@ import { SUPPORT_EMAIL, SUPPORT_PHONE, PRODUCT_NAME } from '@shared/app-config'
 
 /**
  * "Upgrade to Premium / contact us" panel. Shown on the trial-locked screen and
- * the License page so customers know exactly how to reach SkyTech to buy a key.
+ * the License page so customers know exactly how to reach us to buy a key.
  */
 export function UpgradeContact({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
@@ -18,7 +18,7 @@ export function UpgradeContact({ compact = false }: { compact?: boolean }): JSX.
         bound to this computer.
       </p>
       <div className="flex flex-col gap-2 text-sm">
-        <a href={`mailto:${SUPPORT_EMAIL}?subject=SkyTech%20Billing%20License%20Request`} className="flex items-center gap-2 font-medium text-primary hover:underline">
+        <a href={`mailto:${SUPPORT_EMAIL}?subject=Shailee-GRMS%20License%20Request`} className="flex items-center gap-2 font-medium text-primary hover:underline">
           <Mail className="size-4" /> {SUPPORT_EMAIL}
         </a>
         <a href={`tel:${SUPPORT_PHONE.replace(/\s/g, '')}`} className="flex items-center gap-2 font-medium text-primary hover:underline">

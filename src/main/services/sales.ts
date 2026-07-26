@@ -173,11 +173,51 @@ export async function saveSalesDoc(input: SalesDocInput, user: AuthUser): Promis
       unitPrice: l.unitPrice,
       discountPct: l.discountPct,
       discountAmount: l.discountAmount,
-      taxRateBps: l.taxRateBps
+      taxRateBps: l.taxRateBps,
+      cutLength: l.cutLength
     })),
     d.isInterState,
-    { extraCharges: d.extraCharges, extraDiscount: d.extraDiscount }
+    { extraCharges: d.extraCharges, extraDiscount: d.extraDiscount, schemePct: d.schemePct }
   )
+
+  // `totals` also carries derived, display-only figures (taxableValue, totalPcs,
+  // totalMetres) that have no column. Pick out exactly the persisted ones so the
+  // spread below can never push an unknown key at the insert.
+  const totalColumns = {
+    subTotal: totals.subTotal,
+    discountTotal: totals.discountTotal,
+    schemeAmount: totals.schemeAmount,
+    cgstTotal: totals.cgstTotal,
+    sgstTotal: totals.sgstTotal,
+    igstTotal: totals.igstTotal,
+    cessTotal: totals.cessTotal,
+    extraCharges: totals.extraCharges,
+    extraDiscount: totals.extraDiscount,
+    roundOff: totals.roundOff,
+    grandTotal: totals.grandTotal
+  }
+
+  /** Header fields shared by the insert and the update paths. */
+  const dispatchColumns = {
+    schemeLabel: d.schemeLabel ?? null,
+    schemePct: d.schemePct,
+    challanNo: d.challanNo ?? null,
+    orderNo: d.orderNo ?? null,
+    agentName: d.agentName ?? null,
+    consigneeName: d.consigneeName ?? null,
+    consigneeGstin: d.consigneeGstin ?? null,
+    lrNo: d.lrNo ?? null,
+    lrDate: d.lrDate ? new Date(d.lrDate) : null,
+    transportName: d.transportName ?? null,
+    transportStation: d.transportStation ?? null,
+    caseNo: d.caseNo ?? null,
+    weight: d.weight,
+    freight: d.freight,
+    ewayBillNo: d.ewayBillNo ?? null,
+    transporterId: d.transporterId ?? null,
+    dueDays: d.dueDays
+  }
+
   const guardStock = d.docType === 'invoice' && (await preventNegativeStockEnabled())
 
   const result = await getDb().transaction(async (tx) => {
@@ -204,7 +244,8 @@ export async function saveSalesDoc(input: SalesDocInput, user: AuthUser): Promis
           extraChargesLabel: d.extraChargesLabel ?? null,
           notes: d.notes ?? null,
           termsAndConditions: d.termsAndConditions ?? null,
-          ...totals,
+          ...dispatchColumns,
+          ...totalColumns,
           updatedAt: new Date()
         })
         .where(eq(salesDocuments.id, docId))
@@ -225,7 +266,8 @@ export async function saveSalesDoc(input: SalesDocInput, user: AuthUser): Promis
           status: STATUS_FOR[d.docType] ?? 'confirmed',
           notes: d.notes ?? null,
           termsAndConditions: d.termsAndConditions ?? null,
-          ...totals,
+          ...dispatchColumns,
+          ...totalColumns,
           createdBy: user.id
         })
         .returning({ id: salesDocuments.id })
@@ -244,6 +286,8 @@ export async function saveSalesDoc(input: SalesDocInput, user: AuthUser): Promis
         batchNo: src.batchNo ?? null,
         expiryDate: src.expiryDate ? new Date(src.expiryDate) : null,
         quantity: l.quantity,
+        cutLength: src.cutLength,
+        packing: src.packing ?? null,
         unitPrice: l.unitPrice,
         discountPct: l.discountPct,
         discountAmount: l.discountAmount,
@@ -291,6 +335,27 @@ export async function convertSalesDoc(
       extraChargesLabel: source.extraChargesLabel ?? null,
       extraCharges: source.extraCharges ?? 0,
       extraDiscount: source.extraDiscount ?? 0,
+
+      // Carry the trade scheme and the whole dispatch block across the
+      // conversion — an order converted to an invoice must bill identically.
+      schemeLabel: source.schemeLabel ?? null,
+      schemePct: source.schemePct ?? 0,
+      challanNo: source.challanNo ?? null,
+      orderNo: source.orderNo ?? null,
+      agentName: source.agentName ?? null,
+      consigneeName: source.consigneeName ?? null,
+      consigneeGstin: source.consigneeGstin ?? null,
+      lrNo: source.lrNo ?? null,
+      lrDate: source.lrDate ? (source.lrDate instanceof Date ? source.lrDate.getTime() : source.lrDate) : null,
+      transportName: source.transportName ?? null,
+      transportStation: source.transportStation ?? null,
+      caseNo: source.caseNo ?? null,
+      weight: source.weight ?? 0,
+      freight: source.freight ?? 0,
+      ewayBillNo: source.ewayBillNo ?? null,
+      transporterId: source.transporterId ?? null,
+      dueDays: source.dueDays ?? 0,
+
       notes: source.notes ?? null,
       termsAndConditions: source.termsAndConditions ?? null,
       lines: source.lines.map((l) => ({
@@ -300,6 +365,8 @@ export async function convertSalesDoc(
         batchNo: l.batchNo ?? null,
         expiryDate: l.expiryDate ? (l.expiryDate instanceof Date ? l.expiryDate.getTime() : l.expiryDate) : null,
         quantity: l.quantity,
+        cutLength: l.cutLength ?? 0,
+        packing: l.packing ?? null,
         unitPrice: l.unitPrice,
         discountPct: l.discountPct,
         discountAmount: l.discountAmount,

@@ -1,6 +1,6 @@
-appId: com.skytech.billing
-productName: SkyTech Billing
-copyright: Copyright © 2026 SkyTech
+appId: com.shailee.grms
+productName: Shailee-GRMS
+copyright: Copyright © 2026 Shailee
 
 directories:
   buildResources: build
@@ -32,21 +32,33 @@ extraResources:
     filter: ['**/*']
 
 win:
-  executableName: SkyTechBilling
+  executableName: ShaileeGRMS
   icon: build/icon.png
-  # Disabled so the build works without Windows Developer Mode / admin (the
-  # signing toolchain download needs symlink privileges). Trade-off: the .exe
-  # itself keeps the default Electron icon (installer + shortcuts still use ours).
-  # For a production build WITH the embedded exe icon, turn Developer Mode ON
-  # (Settings → Privacy & security → For developers) and set this back to true.
+  # Embedding the exe icon and signing both need the same Windows toolchain,
+  # which requires Developer Mode / admin. Left off so an unsigned build works
+  # anywhere; `npm run build:win:signed` overrides it to true on the CLI.
   signAndEditExecutable: false
   target:
     - target: nsis
       arch:
         - x64
-  # Code signing: provide an EV/OV certificate to clear SmartScreen warnings.
-  # certificateFile: build/cert.pfx
-  # certificatePassword: ${env.CSC_KEY_PASSWORD}
+  # ---- Code signing -------------------------------------------------------
+  # Nothing here is secret: the certificate and its password are supplied by
+  # environment variables at build time, so the .pfx never enters the repo.
+  #
+  #   set CSC_LINK=C:\path\to\certificate.pfx
+  #   set CSC_KEY_PASSWORD=<password>
+  #   npm run build:win:signed
+  #
+  # electron-builder reads CSC_LINK / CSC_KEY_PASSWORD automatically. For an EV
+  # certificate on a hardware token, leave those unset and use the token's own
+  # signing tool via `signtool` — see docs/CODE-SIGNING.md.
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+    # A timestamp means signatures stay valid after the certificate expires.
+    timeStampServer: http://timestamp.digicert.com
+    rfc3161TimeStampServer: http://timestamp.digicert.com
 
 nsis:
   oneClick: false
@@ -54,12 +66,12 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: SkyTech Billing
-  artifactName: SkyTech-Billing-Setup-${version}.${ext}
+  shortcutName: Shailee-GRMS
+  artifactName: Shailee-GRMS-Setup-${version}.${ext}
   deleteAppDataOnUninstall: false
 
 # Auto-update feed. Point this at your release host (GitHub Releases, S3, or a
 # generic web server) when you start publishing builds.
 publish:
   provider: generic
-  url: https://updates.skytech.example/releases/
+  url: https://updates.shailee.example/releases/

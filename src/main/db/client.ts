@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { join } from 'path'
-import { mkdirSync } from 'fs'
+import { join, dirname } from 'path'
+import { mkdirSync, existsSync, readdirSync, copyFileSync, statSync } from 'fs'
 import { createClient, type Client } from '@libsql/client'
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from './schema'
@@ -13,10 +13,59 @@ export type DbOrTx = DB | Txn
 let client: Client | null = null
 let db: DB | null = null
 
+/** Data folders used by earlier product names, newest first. */
+const LEGACY_APP_FOLDERS = ['skytech-billing', 'ledgerline']
+
+/**
+ * Carry a customer's data across a product rename.
+ *
+ * Electron derives `userData` from the app name, so renaming the product points
+ * the app at an empty folder and the customer sees a blank system with their
+ * licence gone. On first launch after a rename we copy the previous folder's
+ * database (and its WAL sidecars, licence lock and window state) across.
+ *
+ * Copy, never move: if anything goes wrong the customer's original data is
+ * still sitting untouched in the old folder.
+ */
+function migrateLegacyUserData(target: string): void {
+  if (existsSync(join(target, 'ledgerline.db'))) return // already migrated or fresh install with data
+
+  const parent = dirname(target)
+  for (const legacy of LEGACY_APP_FOLDERS) {
+    const from = join(parent, legacy)
+    if (from === target || !existsSync(join(from, 'ledgerline.db'))) continue
+
+    try {
+      mkdirSync(target, { recursive: true })
+      for (const name of readdirSync(from)) {
+        // Only live business state: the database and its WAL sidecars, the
+        // licence lock and the window position. Not Chromium's caches, and not
+        // stale .bak copies left behind by earlier maintenance.
+        const wanted =
+          name === 'ledgerline.db' ||
+          name === 'ledgerline.db-wal' ||
+          name === 'ledgerline.db-shm' ||
+          name === '.ll_license.lock' ||
+          name === 'window-state.json'
+        if (!wanted) continue
+        const src = join(from, name)
+        if (!statSync(src).isFile()) continue
+        copyFileSync(src, join(target, name))
+      }
+      console.log(`[db] migrated data from previous app folder "${legacy}"`)
+    } catch (err) {
+      // Never block startup: worst case the customer restores from a backup.
+      console.error('[db] could not migrate previous app data:', err)
+    }
+    return
+  }
+}
+
 export function getDatabasePath(): string {
   if (process.env.LEDGERLINE_DB_PATH) return process.env.LEDGERLINE_DB_PATH
   const dir = app.getPath('userData')
   mkdirSync(dir, { recursive: true })
+  migrateLegacyUserData(dir)
   return join(dir, 'ledgerline.db')
 }
 

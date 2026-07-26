@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Search, Pencil, Trash2, Package, Loader2, AlertTriangle } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Package, Loader2, AlertTriangle, ScanLine, Printer } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { useApp } from '@renderer/store/app'
 import { formatINR, toPaise, toRupees, formatQty } from '@renderer/lib/format'
 import type { ItemInput } from '@shared/dto'
 import { PageHeader } from '@renderer/components/PageHeader'
+import { code128Svg, buildBarcode } from '@shared/barcode'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -28,6 +30,10 @@ interface ItemRow {
   reorderLevel: number
   currentStock: number
   trackInventory: boolean
+  categoryName: string | null
+  barcode: string | null
+  cutLength: number
+  packing: string | null
   isActive: boolean
 }
 
@@ -35,6 +41,8 @@ interface Refs {
   units: { id: string; name: string; symbol: string }[]
   taxRates: { id: string; name: string; rateBps: number }[]
   categories: { id: string; name: string }[]
+  /** Shop-wide default metres per piece, set in Settings. */
+  defaultCutLength: number
 }
 
 type FormState = {
@@ -47,6 +55,7 @@ type FormState = {
   unitId: string
   taxRateId: string
   categoryId: string
+  categoryName: string
   purchasePrice: string
   sellingPrice: string
   sellingPriceIsInclusive: boolean
@@ -54,6 +63,8 @@ type FormState = {
   reorderLevel: string
   openingStock: string
   openingStockValue: string
+  cutLength: string
+  packing: string
   isActive: boolean
 }
 
@@ -66,6 +77,7 @@ const blankForm: FormState = {
   unitId: '',
   taxRateId: '',
   categoryId: '',
+  categoryName: '',
   purchasePrice: '',
   sellingPrice: '',
   sellingPriceIsInclusive: false,
@@ -73,18 +85,72 @@ const blankForm: FormState = {
   reorderLevel: '',
   openingStock: '',
   openingStockValue: '',
+  cutLength: '',
+  packing: '',
   isActive: true
+}
+
+/**
+ * Render a preview of whatever is typed in the barcode box. Code 128 set B
+ * cannot encode characters outside ASCII 32..126, so a bad value throws — show
+ * a hint instead of letting it break the dialog.
+ */
+function barcodePreview(value: string): string {
+  try {
+    return code128Svg(value, { moduleWidth: 1.6, height: 40, fontSize: 10 })
+  } catch {
+    return '<div style="font:12px sans-serif;color:#b45309">Cannot encode these characters as a barcode.</div>'
+  }
 }
 
 export function ItemsPage(): JSX.Element {
   const canManage = useApp((s) => s.has('items:manage'))
   const [rows, setRows] = useState<ItemRow[]>([])
-  const [refs, setRefs] = useState<Refs>({ units: [], taxRates: [], categories: [] })
+  const [refs, setRefs] = useState<Refs>({ units: [], taxRates: [], categories: [], defaultCutLength: 0 })
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<FormState>(blankForm)
   const [saving, setSaving] = useState(false)
+  const [barcodeBusy, setBarcodeBusy] = useState(false)
+
+  /** Issue internal barcodes to every active item that has none yet. */
+  async function assignBarcodes(): Promise<void> {
+    setBarcodeBusy(true)
+    try {
+      const res = await invoke<{ assigned: { id: string }[] }>('barcode:assignMissing')
+      toast.success(
+        res.assigned.length
+          ? `Generated ${res.assigned.length} barcode${res.assigned.length === 1 ? '' : 's'}.`
+          : 'Every active item already has a barcode.'
+      )
+      await load()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not generate barcodes.')
+    } finally {
+      setBarcodeBusy(false)
+    }
+  }
+
+  /** Print a label sheet for whatever the current search is showing. */
+  async function printLabels(): Promise<void> {
+    const withBarcodes = rows.filter((r) => r.barcode)
+    if (!withBarcodes.length) {
+      toast.error('No barcoded items in view. Generate barcodes first.')
+      return
+    }
+    setBarcodeBusy(true)
+    try {
+      await invoke('barcode:labels', { itemIds: withBarcodes.map((r) => r.id), copies: 1, showPrice: true })
+      toast.success(`Label sheet created for ${withBarcodes.length} item(s).`)
+    } catch (err) {
+      // A cancelled save dialog is a normal outcome, not a failure worth shouting about.
+      if (err instanceof ApiError && err.code === 'VALIDATION' && /cancel/i.test(err.message)) return
+      toast.error(err instanceof ApiError ? err.message : 'Could not create labels.')
+    } finally {
+      setBarcodeBusy(false)
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -108,7 +174,14 @@ export function ItemsPage(): JSX.Element {
   }, [load])
 
   function openCreate(): void {
-    setForm({ ...blankForm, unitId: refs.units[0]?.id ?? '', taxRateId: refs.taxRates.find((t) => t.rateBps === 1800)?.id ?? '' })
+    setForm({
+      ...blankForm,
+      unitId: refs.units[0]?.id ?? '',
+      taxRateId: refs.taxRates.find((t) => t.rateBps === 1800)?.id ?? '',
+      // Pre-fill the shop default so a textile operator does not retype the
+      // same cut on every design.
+      cutLength: refs.defaultCutLength ? String(refs.defaultCutLength) : ''
+    })
     setDialogOpen(true)
   }
 
@@ -126,6 +199,7 @@ export function ItemsPage(): JSX.Element {
         unitId: it.unitId ?? '',
         taxRateId: it.taxRateId ?? '',
         categoryId: it.categoryId ?? '',
+        categoryName: refs.categories.find((c) => c.id === it.categoryId)?.name ?? '',
         purchasePrice: String(toRupees(it.purchasePrice)),
         sellingPrice: String(toRupees(it.sellingPrice)),
         sellingPriceIsInclusive: !!it.sellingPriceIsInclusive,
@@ -133,6 +207,8 @@ export function ItemsPage(): JSX.Element {
         reorderLevel: String(it.reorderLevel ?? 0),
         openingStock: String(it.openingStock ?? 0),
         openingStockValue: String(toRupees(it.openingStockValue ?? 0)),
+        cutLength: it.cutLength ? String(it.cutLength) : '',
+        packing: it.packing ?? '',
         isActive: !!it.isActive
       })
       setDialogOpen(true)
@@ -154,6 +230,7 @@ export function ItemsPage(): JSX.Element {
         unitId: form.unitId || null,
         taxRateId: form.taxRateId || null,
         categoryId: form.categoryId || null,
+        categoryName: form.categoryName || null,
         purchasePrice: toPaise(form.purchasePrice || '0'),
         sellingPrice: toPaise(form.sellingPrice || '0'),
         sellingPriceIsInclusive: form.sellingPriceIsInclusive,
@@ -161,6 +238,8 @@ export function ItemsPage(): JSX.Element {
         reorderLevel: Number(form.reorderLevel || 0),
         openingStock: Number(form.openingStock || 0),
         openingStockValue: toPaise(form.openingStockValue || '0'),
+        cutLength: Number(form.cutLength || 0),
+        packing: form.packing || null,
         isActive: form.isActive
       }
       await invoke('items:save', payload)
@@ -175,7 +254,13 @@ export function ItemsPage(): JSX.Element {
   }
 
   async function remove(row: ItemRow): Promise<void> {
-    if (!confirm(`Delete "${row.name}"? It will be hidden but kept for records.`)) return
+    const ok = await confirmAction({
+      title: 'Delete this item?',
+      message: `"${row.name}" will be hidden from lists but kept for your records, so past invoices stay intact.`,
+      confirmLabel: 'Delete item',
+      destructive: true
+    })
+    if (!ok) return
     try {
       await invoke('items:delete', { id: row.id })
       toast.success('Item deleted.')
@@ -197,9 +282,17 @@ export function ItemsPage(): JSX.Element {
         subtitle="Your products & services master with HSN, tax and stock."
         actions={
           canManage ? (
-            <Button onClick={openCreate}>
-              <Plus /> New item
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => void assignBarcodes()} disabled={barcodeBusy}>
+                {barcodeBusy ? <Loader2 className="animate-spin" /> : <ScanLine />} Generate barcodes
+              </Button>
+              <Button variant="outline" onClick={() => void printLabels()} disabled={barcodeBusy}>
+                <Printer /> Print labels
+              </Button>
+              <Button onClick={openCreate}>
+                <Plus /> New item
+              </Button>
+            </div>
           ) : null
         }
       />
@@ -224,6 +317,7 @@ export function ItemsPage(): JSX.Element {
               <TR>
                 <TH>SKU</TH>
                 <TH>Name</TH>
+                <TH>Category</TH>
                 <TH>HSN</TH>
                 <TH className="text-right">Purchase</TH>
                 <TH className="text-right">Selling</TH>
@@ -242,6 +336,13 @@ export function ItemsPage(): JSX.Element {
                       {r.name}
                       {!r.isActive && <Badge variant="secondary" className="ml-2">Inactive</Badge>}
                     </TD>
+                    <TD>
+                      {r.categoryName ? (
+                        <Badge variant="secondary">{r.categoryName}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TD>
                     <TD className="text-muted-foreground">{r.hsnCode ?? '—'}</TD>
                     <TD className="text-right">{formatINR(r.purchasePrice)}</TD>
                     <TD className="text-right">{formatINR(r.sellingPrice)}</TD>
@@ -258,11 +359,23 @@ export function ItemsPage(): JSX.Element {
                     </TD>
                     <TD>
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => void openEdit(r.id)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Edit"
+                          aria-label={`Edit ${r.name}`}
+                          onClick={() => void openEdit(r.id)}
+                        >
                           <Pencil className="size-4" />
                         </Button>
                         {canManage && (
-                          <Button variant="ghost" size="icon" onClick={() => void remove(r)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Delete"
+                            aria-label={`Delete ${r.name}`}
+                            onClick={() => void remove(r)}
+                          >
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         )}
@@ -294,7 +407,48 @@ export function ItemsPage(): JSX.Element {
           <FormField label="SKU *"><Input value={form.sku} onChange={up('sku')} /></FormField>
           <FormField label="Item name *"><Input value={form.name} onChange={up('name')} /></FormField>
           <FormField label="HSN / SAC code"><Input value={form.hsnCode} onChange={up('hsnCode')} /></FormField>
-          <FormField label="Barcode"><Input value={form.barcode} onChange={up('barcode')} /></FormField>
+          <FormField label="Barcode">
+            <div className="flex gap-2">
+              <Input className="font-mono" value={form.barcode} onChange={up('barcode')} placeholder="Scan, type, or generate" />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setForm((f) => ({ ...f, barcode: buildBarcode(Date.now() % 1000000000) }))}
+                title="Generate an internal barcode"
+              >
+                <ScanLine className="size-4" />
+              </Button>
+            </div>
+            {form.barcode && (
+              <div
+                className="mt-2 flex justify-center rounded border bg-white p-2"
+                // Barcode SVG is generated locally from a validated string.
+                dangerouslySetInnerHTML={{ __html: barcodePreview(form.barcode) }}
+              />
+            )}
+          </FormField>
+
+          <FormField label="Cut (metres per piece)">
+            <Input type="number" step="0.01" placeholder="6.30" value={form.cutLength} onChange={up('cutLength')} />
+          </FormField>
+          <FormField label="Packing">
+            <Input placeholder="BOX" value={form.packing} onChange={up('packing')} />
+          </FormField>
+
+          <FormField label="Category">
+            <Input
+              list="item-categories"
+              placeholder="Saree, Salwar Suit, Lehenga…"
+              value={form.categoryName}
+              onChange={up('categoryName')}
+            />
+            {/* Pick an existing group or type a new one — it is created on save. */}
+            <datalist id="item-categories">
+              {refs.categories.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
+          </FormField>
           <FormField label="Unit">
             <Select value={form.unitId} onChange={up('unitId')}>
               <option value="">—</option>

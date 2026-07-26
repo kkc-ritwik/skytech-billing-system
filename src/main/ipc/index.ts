@@ -12,6 +12,8 @@ import { registerPaymentRoutes } from './payments'
 import { registerReportRoutes } from './reports'
 import { registerDocumentRoutes } from './documents'
 import { registerUserRoutes } from './users'
+import { registerBarcodeRoutes } from './barcode'
+import { registerAuditRoutes } from './audit'
 
 /** Registers every IPC route, then installs the single dispatcher. */
 export function registerAllRoutes(): void {
@@ -28,5 +30,7 @@ export function registerAllRoutes(): void {
   registerReportRoutes()
   registerDocumentRoutes()
   registerUserRoutes()
+  registerBarcodeRoutes()
+  registerAuditRoutes()
   installIpcRouter()
 }

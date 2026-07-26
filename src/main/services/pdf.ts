@@ -9,6 +9,8 @@ import { getCompany, getSettings, getCompanyLogoDataUrl } from './settings'
 import { getSalesDoc } from './sales'
 import { getPurchaseDoc } from './purchases'
 import { renderDocumentHtml, renderStatementHtml, renderThermalHtml, type PdfModel, type PdfLine } from './pdf-template'
+import { renderTextileInvoiceHtml, type TextileModel } from './pdf-textile'
+import { renderLabelSheetHtml, type LabelRequest } from './barcode'
 import { partyLedger } from './ledger'
 import type { AuthUser } from '@shared/ipc'
 import { audit } from './audit'
@@ -103,6 +105,84 @@ async function buildModel(type: 'sales' | 'purchase', id: string): Promise<{ mod
   return { model, number: doc.number }
 }
 
+/**
+ * Build the trade-format model. Only sales documents carry the dispatch and
+ * scheme fields, so purchase documents always fall back to the generic layout.
+ */
+async function buildTextileModel(id: string): Promise<{ model: TextileModel; number: string }> {
+  const doc: any = await getSalesDoc(id)
+  if (!doc) throw Object.assign(new Error('Document not found.'), { code: 'NOT_FOUND' })
+  const company = await getCompany()
+  const party = await getDb().select().from(parties).where(eq(parties.id, doc.partyId)).get()
+  const settings = await getSettings()
+
+  // The grid prints one GST rate in its caption; use the one carrying the most
+  // value so a mixed-rate bill still names its dominant slab.
+  const byRate = new Map<number, number>()
+  for (const l of doc.lines as any[]) byRate.set(l.taxRateBps, (byRate.get(l.taxRateBps) ?? 0) + l.taxableValue)
+  const taxRateBps = [...byRate.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
+
+  const ts = (v: any): number | null => (v == null ? null : v instanceof Date ? v.getTime() : v)
+
+  const model: TextileModel = {
+    docTypeLabel: LABELS[doc.docType] ?? doc.docType.toUpperCase(),
+    number: doc.number,
+    issueDate: ts(doc.issueDate)!,
+    company: company ?? null,
+    party: party ?? null,
+    placeOfSupply:
+      party?.billingStateCode && party?.billingState
+        ? `${party.billingStateCode}-${party.billingState}`
+        : party?.billingState ?? null,
+    isInterState: !!doc.isInterState,
+
+    challanNo: doc.challanNo ?? null,
+    orderNo: doc.orderNo ?? null,
+    agentName: doc.agentName ?? null,
+    consigneeName: doc.consigneeName ?? null,
+    consigneeGstin: doc.consigneeGstin ?? null,
+    lrNo: doc.lrNo ?? null,
+    lrDate: ts(doc.lrDate),
+    transportName: doc.transportName ?? null,
+    transportStation: doc.transportStation ?? null,
+    caseNo: doc.caseNo ?? null,
+    weight: doc.weight ?? 0,
+    freight: doc.freight ?? 0,
+    ewayBillNo: doc.ewayBillNo ?? null,
+    transporterId: doc.transporterId ?? null,
+    dueDays: doc.dueDays ?? 0,
+
+    hsnCode: (doc.lines as any[]).find((l) => l.hsnCode)?.hsnCode ?? null,
+    lines: (doc.lines as any[]).map((l) => ({
+      description: l.description,
+      packing: l.packing ?? null,
+      quantity: l.quantity,
+      cutLength: l.cutLength ?? 0,
+      unitPrice: l.unitPrice,
+      taxableValue: l.taxableValue
+    })),
+    totals: {
+      subTotal: doc.subTotal,
+      schemeAmount: doc.schemeAmount ?? 0,
+      taxableValue: doc.subTotal - (doc.schemeAmount ?? 0),
+      cgstTotal: doc.cgstTotal,
+      sgstTotal: doc.sgstTotal,
+      igstTotal: doc.igstTotal,
+      roundOff: doc.roundOff,
+      grandTotal: doc.grandTotal,
+      totalPcs: Math.round((doc.lines as any[]).reduce((a, l) => a + l.quantity, 0) * 100) / 100,
+      totalMetres:
+        Math.round((doc.lines as any[]).reduce((a, l) => a + l.quantity * (l.cutLength ?? 0), 0) * 100) / 100
+    },
+    schemeLabel: doc.schemeLabel ?? null,
+    schemePct: doc.schemePct ?? 0,
+    taxRateBps,
+    terms: doc.termsAndConditions ?? null,
+    invocation: (settings.invoiceInvocation as string) ?? null
+  }
+  return { model, number: doc.number }
+}
+
 /** Render to a PDF buffer. 'thermal' uses CSS @page sizing for a continuous roll. */
 async function renderPdfBuffer(html: string, paperSize: 'A4' | 'A5' | 'thermal'): Promise<Buffer> {
   const win = new BrowserWindow({
@@ -128,9 +208,28 @@ export async function exportDocumentPdf(
   user: AuthUser,
   format: 'a4' | 'thermal' = 'a4'
 ): Promise<{ path: string }> {
-  const { model, number } = await buildModel(type, id)
-  const html = format === 'thermal' ? renderThermalHtml(model) : renderDocumentHtml(model)
-  const buffer = await renderPdfBuffer(html, format === 'thermal' ? 'thermal' : model.paperSize)
+  // Template choice: the trade layout applies to sales documents only; purchase
+  // paperwork keeps the generic form regardless of the setting.
+  const settings = await getSettings()
+  const useTextile = format !== 'thermal' && type === 'sales' && settings.invoiceTemplate === 'textile'
+
+  let html: string
+  let paper: 'A4' | 'A5' | 'thermal'
+  let number: string
+
+  if (useTextile) {
+    const built = await buildTextileModel(id)
+    html = renderTextileInvoiceHtml(built.model)
+    paper = 'A4'
+    number = built.number
+  } else {
+    const built = await buildModel(type, id)
+    html = format === 'thermal' ? renderThermalHtml(built.model) : renderDocumentHtml(built.model)
+    paper = format === 'thermal' ? 'thermal' : built.model.paperSize
+    number = built.number
+  }
+
+  const buffer = await renderPdfBuffer(html, paper)
 
   const safeName = number.replace(/[\\/:*?"<>|]/g, '-')
   const res = await dialog.showSaveDialog({
@@ -142,6 +241,30 @@ export async function exportDocumentPdf(
 
   writeFileSync(res.filePath, buffer)
   await audit({ userId: user.id, username: user.username, action: `${type}.pdf.${format}`, entityType: type, entityId: id })
+  void shell.openPath(res.filePath)
+  return { path: res.filePath }
+}
+
+/** Generate a sheet of barcode labels (A4, 65-up) and open it for printing. */
+export async function exportBarcodeLabels(req: LabelRequest, user: AuthUser): Promise<{ path: string }> {
+  const html = await renderLabelSheetHtml(req)
+  const buffer = await renderPdfBuffer(html, 'A4')
+
+  const res = await dialog.showSaveDialog({
+    title: 'Save barcode labels',
+    defaultPath: `barcode-labels-${new Date().toISOString().slice(0, 10)}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  })
+  if (res.canceled || !res.filePath) throw Object.assign(new Error('Export cancelled.'), { code: 'VALIDATION' })
+
+  writeFileSync(res.filePath, buffer)
+  await audit({
+    userId: user.id,
+    username: user.username,
+    action: 'item.barcode.labels',
+    entityType: 'item',
+    details: { count: req.itemIds.length, copies: req.copies ?? 1 }
+  })
   void shell.openPath(res.filePath)
   return { path: res.filePath }
 }

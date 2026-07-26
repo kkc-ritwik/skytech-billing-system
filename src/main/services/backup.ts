@@ -11,7 +11,7 @@ import type { AuthUser } from '@shared/ipc'
 
 const KEEP = 10 // how many auto-backups to retain
 const DUE_MS = 20 * 60 * 60 * 1000 // create at most ~once/day on launch
-const PREFIX = 'SkyTech-AutoBackup-'
+const PREFIX = 'Shailee-AutoBackup-'
 
 /** Direct setting write (no audit/user needed — safe to call at startup). */
 async function putSetting(key: string, value: unknown): Promise<void> {

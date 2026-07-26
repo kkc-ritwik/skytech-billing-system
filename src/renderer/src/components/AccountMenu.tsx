@@ -5,6 +5,7 @@ import { CHANNELS, type AuthUser } from '@shared/ipc'
 import { ROLE_LABELS } from '@shared/permissions'
 import { useApp } from '@renderer/store/app'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -119,7 +120,13 @@ function RecoveryDialog({ onClose }: { onClose: () => void }): JSX.Element {
   const [code, setCode] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   async function gen(): Promise<void> {
-    if (!confirm('Generate a NEW recovery code? Your old code will stop working.')) return
+    const ok = await confirmAction({
+      title: 'Generate a new recovery code?',
+      message: 'Your current recovery code stops working immediately. Store the new one somewhere safe.',
+      confirmLabel: 'Generate new code',
+      destructive: true
+    })
+    if (!ok) return
     setBusy(true)
     try {
       const res = await invoke<{ recoveryCode: string }>(CHANNELS.authRegenRecovery)

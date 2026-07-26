@@ -1,4 +1,4 @@
-# SkyTech Billing — Admin Licensing Portal
+# Shailee-GRMS — Admin Licensing Portal
 
 A tiny **vendor-side** web app to issue license keys without the command line.
 Run it on **your** machine only. It signs keys with your private key

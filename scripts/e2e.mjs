@@ -14,7 +14,7 @@ const outDir = join(root, 'release', 'e2e')
 mkdirSync(outDir, { recursive: true })
 
 // Isolated throwaway DB so the user's real data is never touched.
-const dbPath = join(tmpdir(), `skytech-e2e-${Date.now()}.db`)
+const dbPath = join(tmpdir(), `shailee-e2e-${Date.now()}.db`)
 for (const s of ['', '-wal', '-shm']) if (existsSync(dbPath + s)) rmSync(dbPath + s)
 process.env.LEDGERLINE_DB_PATH = dbPath
 
@@ -36,7 +36,7 @@ const SEQ = `(async () => {
   const api = window.api
   const call = async (ch, p) => { const r = await api.invoke(ch, p); if (!r.ok) throw new Error(ch + ': ' + r.error); return r.data }
   const P = (r) => Math.round(r * 100)
-  const bs = await call('auth:bootstrap', { fullName: 'Ritwik Singh', username: 'admin', password: 'SkyTech@123' })
+  const bs = await call('auth:bootstrap', { fullName: 'Ritwik Singh', username: 'admin', password: 'Shailee@123' })
   api.setToken(bs.session.token)
   localStorage.setItem('ll_token', bs.session.token)
 

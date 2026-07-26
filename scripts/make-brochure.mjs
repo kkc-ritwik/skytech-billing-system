@@ -21,8 +21,8 @@ const img = (name) => (existsSync(join(dir, name)) ? 'data:image/png;base64,' + 
 // [part, file, title, intro, [steps]]
 const TOPICS = [
   ['Getting started', '01-first-run-setup.png', 'Install &amp; create your account',
-    'After installing and opening <b>SkyTech Billing</b> for the first time, you create the owner account. This account controls your whole business.',
-    ['Double-click <b>SkyTech-Billing-Setup.exe</b>. If Windows shows a blue "Windows protected your PC" notice, click <b>More info → Run anyway</b> (this appears for new software and is safe).',
+    'After installing and opening <b>Shailee-GRMS</b> for the first time, you create the owner account. This account controls your whole business.',
+    ['Double-click <b>Shailee-GRMS-Setup.exe</b>. If Windows shows a blue "Windows protected your PC" notice, click <b>More info → Run anyway</b> (this appears for new software and is safe).',
      'Choose where to install and finish the wizard — a desktop &amp; Start-menu shortcut is created.',
      'On first launch, enter your <b>Full name</b>, a <b>Username</b> and a <b>Password</b> (min 8 characters), then click <b>Create account &amp; continue</b>.',
      'You will be shown a one-time <b>Recovery code</b> — write it down and keep it safe. It is the only way to reset your password if you forget it.']],
@@ -137,13 +137,13 @@ const TOPICS = [
   ['Administration', '20-help.png', 'Help &amp; support',
     'Everything you need to get help is one click away.',
     ['Open <b>Help &amp; Support</b> for the app version, your licence and <b>Machine ID</b>.',
-     'Reach SkyTech by email, phone or WhatsApp.',
+     'Reach Shailee by email, phone or WhatsApp.',
      'Use <b>Open data &amp; backups folder</b> / <b>Open logs folder</b> if support asks for a file.']],
 
   ['Licence', '18-license.png', 'Free trial &amp; activation',
     'Every install includes a 14-day free trial with all features. After that, activate a licence to continue.',
     ['Open <b>License</b> and copy your <b>Machine ID</b>.',
-     `Send it to SkyTech (<b>${EMAIL}</b> / <b>${PHONE}</b>) with payment.`,
+     `Send it to Shailee (<b>${EMAIL}</b> / <b>${PHONE}</b>) with payment.`,
      'We send you a key bound to your computer — paste it and click <b>Activate</b>. It works offline, instantly.',
      'Moving to a new PC? Click <b>Deactivate this device</b>, restore your backup on the new PC, and we issue a fresh key.']]
 ]
@@ -199,15 +199,15 @@ function buildHtml() {
 
   <div class="cover">
     <div class="logo">🧾</div>
-    <h1>SkyTech Billing</h1>
-    <div class="tag">Billing that reaches new heights</div>
-    <div class="meta">Complete Product Guide &amp; Step-by-Step Manual<br/>by SkyTech Developments · ${EMAIL} · ${PHONE}</div>
+    <h1>Shailee-GRMS</h1>
+    <div class="tag">Manage Fashion. Grow Your Business.</div>
+    <div class="meta">Complete Product Guide &amp; Step-by-Step Manual<br/>by Shailee Developments · ${EMAIL} · ${PHONE}</div>
     ${img('02-dashboard.png') ? `<img class="shot" src="${img('02-dashboard.png')}" />` : ''}
   </div>
 
   <div class="page">
-    <h1 class="section">What is SkyTech Billing?</h1>
-    <p><b>SkyTech Billing</b> is a complete, offline Windows application for <b>GST billing and inventory</b>, built for
+    <h1 class="section">What is Shailee-GRMS?</h1>
+    <p><b>Shailee-GRMS</b> is a complete, offline Windows application for <b>GST billing and inventory</b>, built for
     distributors and suppliers (for example, selling to schools &amp; colleges). All your data is stored securely on your
     own computer — no internet is needed for daily use.</p>
     <h2 style="color:#1e3a8a;margin-top:16px">What it does</h2>
@@ -240,13 +240,13 @@ function buildHtml() {
       <li><b>New computer?</b> Back up → install on the new PC → Restore → deactivate the old licence and activate the new key.</li>
       <li><b>Lost password?</b> Use "Forgot password?" with your recovery code, or ask an admin to reset it.</li>
     </ul>
-    <h1 class="section" style="margin-top:24px">Support — SkyTech Developments</h1>
+    <h1 class="section" style="margin-top:24px">Support — Shailee Developments</h1>
     <table>
       <tr><th>Email</th><td>${EMAIL}</td></tr>
       <tr><th>Phone / WhatsApp</th><td>${PHONE}</td></tr>
       <tr><th>Website</th><td>${WEB}</td></tr>
     </table>
-    <p style="margin-top:28px;color:#94a3b8;font-size:10px">© 2026 SkyTech Developments · SkyTech Billing — Billing that reaches new heights.</p>
+    <p style="margin-top:28px;color:#94a3b8;font-size:10px">© 2026 Shailee Developments · Shailee-GRMS — Manage Fashion. Grow Your Business..</p>
   </div>
   </body></html>`
 }
@@ -260,8 +260,8 @@ app.whenReady().then(async () => {
   await win.loadURL(`http://127.0.0.1:${port}/`)
   await new Promise((r) => setTimeout(r, 1500))
   const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
-  writeFileSync(join(root, 'SkyTech-Billing-Brochure.pdf'), pdf)
+  writeFileSync(join(root, 'Shailee-GRMS-Brochure.pdf'), pdf)
   server.close()
-  console.log('Wrote SkyTech-Billing-Brochure.pdf', `(${(pdf.length / 1024 / 1024).toFixed(2)} MB)`)
+  console.log('Wrote Shailee-GRMS-Brochure.pdf', `(${(pdf.length / 1024 / 1024).toFixed(2)} MB)`)
   app.quit()
 })

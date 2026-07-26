@@ -1,11 +1,12 @@
 import { Route, Routes, NavLink } from 'react-router-dom'
-import { Moon, Sun, Receipt } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
 import { useApp } from '@renderer/store/app'
-import { PRODUCT_NAME, TAGLINE } from '@shared/app-config'
+import { PRODUCT_NAME, PRODUCT_SUBTITLE } from '@shared/app-config'
 import { cn } from '@renderer/lib/utils'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { AccountMenu } from '@renderer/components/AccountMenu'
+import { BrandMark } from '@renderer/components/BrandMark'
 import { NAV } from './nav'
 import { Dashboard } from '@renderer/pages/Dashboard'
 import { Placeholder } from '@renderer/pages/Placeholder'
@@ -15,9 +16,11 @@ import { SettingsPage } from '@renderer/pages/SettingsPage'
 import { InventoryPage } from '@renderer/pages/InventoryPage'
 import { PurchasesPage } from '@renderer/pages/PurchasesPage'
 import { SalesPage } from '@renderer/pages/SalesPage'
+import { PosPage } from '@renderer/pages/PosPage'
 import { PaymentsPage } from '@renderer/pages/PaymentsPage'
 import { ReportsPage } from '@renderer/pages/ReportsPage'
 import { UsersPage } from '@renderer/pages/UsersPage'
+import { AuditPage } from '@renderer/pages/AuditPage'
 import { LicensePage } from '@renderer/pages/LicensePage'
 import { HelpPage } from '@renderer/pages/HelpPage'
 
@@ -29,12 +32,10 @@ export function AppLayout(): JSX.Element {
       {/* Sidebar */}
       <aside className="no-print flex w-64 shrink-0 flex-col border-r bg-card">
         <div className="flex h-16 items-center gap-2 border-b px-5">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Receipt className="size-5" />
-          </div>
+          <BrandMark size={34} />
           <div className="leading-tight">
             <div className="text-base font-bold">{PRODUCT_NAME}</div>
-            <div className="text-[10px] text-muted-foreground">{TAGLINE}</div>
+            <div className="text-[10px] leading-tight text-muted-foreground">{PRODUCT_SUBTITLE}</div>
           </div>
         </div>
         <nav className="flex-1 space-y-5 overflow-y-auto p-3">
@@ -117,9 +118,11 @@ function RoutesView(): JSX.Element {
       <Route path="/inventory" element={<InventoryPage />} />
       <Route path="/purchases" element={<PurchasesPage />} />
       <Route path="/sales" element={<SalesPage />} />
+      <Route path="/pos" element={<PosPage />} />
       <Route path="/payments" element={<PaymentsPage />} />
       <Route path="/reports" element={<ReportsPage />} />
       <Route path="/users" element={<UsersPage />} />
+      <Route path="/audit" element={<AuditPage />} />
       <Route path="/license" element={<LicensePage />} />
       <Route path="/help" element={<HelpPage />} />
       <Route path="/settings" element={<SettingsPage />} />

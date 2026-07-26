@@ -59,12 +59,21 @@ export const items = sqliteTable(
     openingStockValue: integer('opening_stock_value').notNull().default(0), // paise
     barcode: text('barcode'),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+
+    // ---- Textile trade attributes ----
+    // Metres in one piece (the "CUT", e.g. a 6.30 m saree cut). Total metres on
+    // an invoice line is derived as PCS x CUT — never entered by hand.
+    cutLength: real('cut_length').notNull().default(0),
+    // Packing presentation shown on the invoice instead of CUT ("BOX", "BALE").
+    packing: text('packing'),
+
     ...timestamps,
     ...softDelete
   },
   (t) => ({
     skuUq: uniqueIndex('item_sku_uq').on(t.sku),
-    nameIdx: index('item_name_idx').on(t.name)
+    nameIdx: index('item_name_idx').on(t.name),
+    barcodeUq: uniqueIndex('item_barcode_uq').on(t.barcode)
   })
 )
 

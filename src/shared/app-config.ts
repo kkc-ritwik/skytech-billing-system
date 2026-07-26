@@ -8,10 +8,19 @@
  */
 
 /** ---- Branding (single source of truth) ---- */
-export const COMPANY_NAME = 'SkyTech'
-export const PRODUCT_NAME = 'SkyTech Billing'
-export const TAGLINE = 'Billing that reaches new heights'
-export const COPYRIGHT_HOLDER = 'SkyTech Developments'
+export const COMPANY_NAME = 'Shailee'
+export const PRODUCT_NAME = 'Shailee-GRMS'
+export const PRODUCT_SUBTITLE = 'Garment Retail Management System'
+export const TAGLINE = 'Manage Fashion. Grow Your Business.'
+export const COPYRIGHT_HOLDER = 'Shailee'
+
+/** Brand palette, mirrored by the CSS variables in styles/globals.css. */
+export const BRAND = {
+  purple: '#5B2D8E',
+  magenta: '#C2186B',
+  purpleDark: '#3F1F63',
+  magentaLight: '#E0489A'
+} as const
 
 /** ---- Support / sales contact (shown for upgrades & activation) ---- */
 export const SUPPORT_EMAIL = 'robin@skytechdevelopments.com'

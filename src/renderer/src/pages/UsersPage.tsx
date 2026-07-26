@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { useApp } from '@renderer/store/app'
 import { formatDate } from '@renderer/lib/format'
 import { ROLE_LABELS, type Role } from '@shared/permissions'
@@ -76,7 +77,13 @@ export function UsersPage(): JSX.Element {
   }
 
   async function remove(r: UserRow): Promise<void> {
-    if (!confirm(`Delete user "${r.fullName}"?`)) return
+    const ok = await confirmAction({
+      title: 'Delete this user?',
+      message: `"${r.fullName}" will lose access immediately. Their past activity stays in the audit log.`,
+      confirmLabel: 'Delete user',
+      destructive: true
+    })
+    if (!ok) return
     try {
       await invoke('users:delete', { id: r.id })
       toast.success('User deleted.')

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SkyTech Billing — Admin Licensing Portal (VENDOR SIDE ONLY).
+ * Shailee-GRMS — Admin Licensing Portal (VENDOR SIDE ONLY).
  *
  * A tiny zero-dependency local web app to issue license keys without the command
  * line. Run it on YOUR machine; it signs keys with your private key. NEVER deploy
@@ -64,7 +64,7 @@ function signKey({ to, fp, edition, days }) {
 
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SkyTech Billing — License Portal</title>
+<title>Shailee-GRMS — License Portal</title>
 <style>
   :root { --b:#2563eb; }
   * { box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
@@ -86,7 +86,7 @@ const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
   .badge { font-size:11px; background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:999px; }
 </style></head><body>
 <div class="wrap"><div class="card">
-  <h1>🧾 SkyTech Billing — License Portal</h1>
+  <h1>🧾 Shailee-GRMS — License Portal</h1>
   <div class="sub">Generate a machine-bound activation key for a customer. ${PASSWORD ? '' : '<span class="badge">No password set — local use only</span>'}</div>
   <form id="f">
     ${PASSWORD ? '<label>Portal password</label><input type="password" id="pw" required>' : ''}
@@ -169,7 +169,7 @@ const server = createServer((req, res) => {
 })
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\nSkyTech Billing — License Portal → http://localhost:${PORT}`)
+  console.log(`\nShailee-GRMS — License Portal → http://localhost:${PORT}`)
   console.log(PASSWORD ? '(password protected)' : '(no password — bind is localhost only)')
   if (!existsSync(KEY_PATH)) console.warn(`\n⚠ Private key missing at ${KEY_PATH}. Run: node scripts/license-keygen.mjs init`)
 })

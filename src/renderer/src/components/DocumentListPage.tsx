@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, FileDown, Loader2, FileText, ArrowRightLeft, MessageCircle, Printer, FileCode2 } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { useApp } from '@renderer/store/app'
 import { formatINR, formatDate } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
@@ -139,7 +140,13 @@ export function DocumentListPage({
   }
 
   async function remove(row: DocRow): Promise<void> {
-    if (!confirm(`Delete ${row.number}? Stock effects will be reversed.`)) return
+    const ok = await confirmAction({
+      title: 'Delete this document?',
+      message: `${row.number} will be cancelled and any stock it moved will be reversed.`,
+      confirmLabel: 'Delete document',
+      destructive: true
+    })
+    if (!ok) return
     try {
       await invoke(deleteChannel, { id: row.id })
       toast.success('Deleted.')

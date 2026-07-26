@@ -95,7 +95,17 @@ const ALLOWED_SETTING_KEYS = new Set([
   'defaultTaxInclusive',
   'preventNegativeStock',
   'autoBackupDir',
-  'autoBackupLastAt'
+  'autoBackupLastAt',
+  // 'standard' = the generic GST layout; 'textile' = the trade bill format
+  // with PCS/CUT/MTS/RATE columns and the dispatch block.
+  'invoiceTemplate',
+  // Devotional line printed above the firm name, e.g. "Shree Ganeshaya Namah".
+  'invoiceInvocation',
+  // Defaults pre-filled on a new invoice so the counter does not retype them.
+  'defaultSchemeLabel',
+  'defaultSchemePct',
+  'defaultCutLength',
+  'defaultTransportName'
 ])
 
 export async function setSettings(patch: Record<string, unknown>, user: AuthUser): Promise<void> {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, Search, Pencil, Trash2, Users, Loader2, BookOpen } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { useApp } from '@renderer/store/app'
 import { formatINR, toPaise, toRupees } from '@renderer/lib/format'
 import type { PartyInput } from '@shared/dto'
@@ -181,7 +182,13 @@ export function PartiesPage(): JSX.Element {
   }
 
   async function remove(row: PartyRow): Promise<void> {
-    if (!confirm(`Delete "${row.name}"?`)) return
+    const ok = await confirmAction({
+      title: 'Delete this record?',
+      message: `"${row.name}" will be hidden from lists. Existing documents for them are kept.`,
+      confirmLabel: 'Delete',
+      destructive: true
+    })
+    if (!ok) return
     try {
       await invoke('parties:delete', { id: row.id })
       toast.success('Deleted.')
