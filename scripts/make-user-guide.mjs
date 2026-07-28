@@ -938,7 +938,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
   <ol class="steps">
     <li>Open <b>License</b> under Administration (or <b>Help &amp; Support</b>).</li>
     <li>Find <b>Machine ID</b> — 32 letters and digits, e.g.
-      <code>F23DA50ECF2B630B091BA60B397C4C5F</code>.</li>
+      <code>A1B2C3D4E5F60718293A4B5C6D7E8F90</code>.</li>
     <li>Press the <b>copy</b> button beside it and send it to Shailee with your payment.
       <b>Use the copy button</b> — typing it by hand almost always introduces a mistake.</li>
     <li>Shailee send back a licence key starting <code>LL1.</code> It is long — that is normal.</li>

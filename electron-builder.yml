@@ -16,6 +16,21 @@ files:
   - '!scripts/*'
   - '!admin-portal/*'
   - '!*.private.pem'
+  # Nothing in the repo root belongs in a client's installation. app.asar is
+  # trivially unpacked (`npx asar extract`), so anything left here is readable
+  # by whoever we ship to. This previously leaked docs/ACTIVATION-VENDOR.md —
+  # our key-issuing procedure — and QA-REPORT.md, which describes the licence
+  # system's residual attack surface. Both are vendor-only.
+  - '!docs'
+  - '!docs/**'
+  - '!*.md'
+  - '!*.pdf'
+  - '!*.pfx'
+  - '!*.pem'
+  - '!release'
+  - '!release/**'
+  - '!{eslint.config.mjs,postcss.config.js,tailwind.config.js}'
+  - '!{QA-REPORT.md,TEST-GUIDE.md}'
 
 # libSQL ships prebuilt N-API binaries (ABI-stable) — no native rebuild needed.
 npmRebuild: false

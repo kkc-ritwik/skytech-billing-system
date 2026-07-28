@@ -97,14 +97,14 @@ reachable from outside your machine.
 # One year, Professional
 node scripts/license-keygen.mjs sign \
   --to "RAJESHWARI SHREE" \
-  --fp F23DA50ECF2B630B091BA60B397C4C5F \
+  --fp A1B2C3D4E5F60718293A4B5C6D7E8F90 \
   --edition professional \
   --days 365
 
 # Perpetual — just omit --days
 node scripts/license-keygen.mjs sign \
   --to "RAJESHWARI SHREE" \
-  --fp F23DA50ECF2B630B091BA60B397C4C5F \
+  --fp A1B2C3D4E5F60718293A4B5C6D7E8F90 \
   --edition standard
 ```
 
@@ -119,7 +119,7 @@ Ask them to open the app and read it from **either**:
 - **License** (Administration) → the Machine ID box, or
 - **Help & Support** → Machine ID, with a copy button
 
-It is 32 hex characters, e.g. `F23DA50ECF2B630B091BA60B397C4C5F`. Have them use
+It is 32 hex characters, e.g. `A1B2C3D4E5F60718293A4B5C6D7E8F90`. Have them use
 the copy button and send it on WhatsApp — transcribing it by hand invites typos.
 
 > **It is not secret.** It is a one-way hash of the computer's hostname, OS,

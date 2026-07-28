@@ -18,7 +18,7 @@
 | Functional UI checks | 135 on the final clean run (**135 pass / 0 fail**) |
 | Adversarial security checks | 19 (**19 pass**) |
 | Backend suites | 5 (all green) |
-| **Application defects found this pass** | **4 — all fixed and re-verified** |
+| **Application defects found this pass** | **5 — all fixed and re-verified** |
 | Renderer console errors | **0** |
 | Main-process errors in `main.log` | **0** |
 
@@ -42,11 +42,14 @@ npm test
 
 The earlier audits tested whether each screen **worked**. They did not test
 whether the system could be **attacked**, nor whether values the app derives are
-derived *consistently* everywhere. All three defects below sit in that gap:
+derived *consistently* everywhere, nor what the installer actually puts on the
+client's disk. Every defect below sits in one of those gaps:
 
 - two were only reachable by calling the IPC bridge directly, never by clicking;
 - one appeared only when the same business fact was computed in two places and
-  the two disagreed.
+  the two disagreed;
+- one was a workflow trap that left a green tick on a broken outcome;
+- one was not in the application at all, but in what shipped alongside it.
 
 This pass therefore hunted **classes** of defect rather than screens:
 security decisions trusted from mutable local state; values entered by hand that
@@ -162,7 +165,40 @@ Verified live on the running build: a receipt for a bill's exact balance settles
 it to **paid, nothing outstanding** with no button pressed, and clearing the
 boxes produces the warning rather than silently losing the money.
 
-### 3.5 (Previous pass) Invoices raised outside the POS charged the wrong GST — **HIGH**
+### 3.5 The installer shipped our own vendor documents to the client — **MEDIUM**
+
+Found by chasing an incidental grep result rather than ignoring it. `app.asar`
+is not a security boundary — `npx asar extract` opens it in one command — so
+everything packaged into it is readable by whoever we ship to. The `files`
+list in `electron-builder.yml` was a **blocklist**, and blocklists leak.
+
+Shipped to every client, unnoticed:
+
+- `docs/ACTIVATION-VENDOR.md` — our key-issuing procedure and the
+  `license-keygen.mjs` command line
+- `docs/CODE-SIGNING.md`
+- **`QA-REPORT.md`** — this document, which describes the licence system's
+  residual attack surface
+- `TEST-GUIDE.md`, the superseded SkyTech-branded PDFs, and the build configs
+
+**The signing private key was *not* packaged** — verified by searching the
+extracted archive for `.pem` files and for `BEGIN PRIVATE KEY`. Both empty. The
+`!*.private.pem` rule and `.gitignore` held.
+
+**Fix.** The root of the repo is now excluded wholesale — `docs`, `*.md`,
+`*.pdf`, `*.pem`, `*.pfx`, `release`, and the build configs. Verified by
+extracting the rebuilt archive: its root now contains exactly `node_modules`,
+`out` and `package.json`, with no vendor document, no machine ID and no key.
+The packaged `ShaileeGRMS.exe` was then launched on a virgin profile and reached
+the first-run setup screen with a working IPC bridge and zero console errors, so
+the exclusions did not break packaging.
+
+Related, in the same pass: the guide and the vendor doc used a **real machine
+fingerprint** as their worked example. A client following the guide could copy
+the example instead of their own ID, and we would issue a key bound to the wrong
+machine. Replaced with an obviously synthetic placeholder.
+
+### 3.6 (Previous pass) Invoices raised outside the POS charged the wrong GST — **HIGH**
 
 Recorded here because it is the same class as 3.2. The POS derived IGST vs
 CGST+SGST from state codes; the Sales editor did not, defaulting to a manual
@@ -206,6 +242,9 @@ and delete.
 documents, unknown party ids, >100% discounts, overflow quantities.
 **Data integrity** — deleting an item or party is a soft delete; invoice history
 survives intact.
+**What actually ships** — `app.asar` extracted and inventoried: no vendor
+document, no signing key, no internal report; the packaged `.exe` booted on a
+virgin profile to the first-run screen with a working IPC bridge.
 
 ---
 
@@ -234,12 +273,14 @@ barcodes → stock in → scan at the counter → GST invoice → print → paym
 report → audit — runs end to end with **no application defects outstanding**, no
 console errors and no main-process errors.
 
-Four defects were found, fixed, rebuilt and re-verified within this pass. Two were
+Five defects were found, fixed, rebuilt and re-verified within this pass. Two were
 reachable only by attacking the IPC layer directly and would never have surfaced
 by clicking through the UI, which is why the adversarial pass was worth running
 separately. A third — the payment that settled nothing — was hiding behind a
 test that reported success, and was only caught by checking the database instead
-of the tick.
+of the tick. A fifth was outside the application altogether, in what the
+installer packaged, and was caught by following up an incidental grep result
+instead of discarding it.
 
 The single failure in the final run was traced to the test harness, not the
 product: one suite located line-item rows with an unscoped `tbody tr` selector
