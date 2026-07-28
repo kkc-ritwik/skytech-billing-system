@@ -11,9 +11,14 @@ import {
 import { exportBarcodeLabels } from '../services/pdf'
 
 export function registerBarcodeRoutes(): void {
-  // Counter bootstrap. Gated on sales:create (not settings:view) so an Operator
-  // can read the company state code needed for correct IGST/CGST selection.
-  route<undefined, PosContext>('pos:context', 'sales:create', () => posContext())
+  // Company state code + shop defaults, needed wherever a document is raised.
+  //
+  // Gated on dashboard:view — the one permission every role holds — rather than
+  // settings:view, because Operators and purchase-only staff must be able to
+  // read the state code. Without it the app cannot tell inter-state from
+  // intra-state and silently bills the wrong kind of GST. Nothing sensitive is
+  // returned: a state code and the shop's default cut/scheme/transport.
+  route<undefined, PosContext>('app:context', 'dashboard:view', () => posContext())
 
   /**
    * Resolve a scanned code. Returns null rather than throwing when nothing

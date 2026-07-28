@@ -436,8 +436,15 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
     <tr><td><b>Super Admin</b></td><td>Everything including licence management</td><td>—</td></tr>
     <tr><td><b>Admin</b> (you)</td><td>All business work, staff, settings, backups</td><td>Vendor-only licence controls</td></tr>
     <tr><td><b>Manager</b></td><td>Billing, purchases, payments, all reports, approvals</td><td>Create users, change settings, take backups</td></tr>
-    <tr><td><b>Operator</b> (counter staff)</td><td>Bill at the POS, add customers, record payments, see stock</td><td>See profit reports, change prices policy, users, settings, licence, activity log</td></tr>
+    <tr><td><b>Operator</b> (counter staff)</td><td>Bill at the POS, add customers, record payments, see stock</td><td><b>Edit or delete a saved bill</b>, adjust stock, manage items or barcodes, see profit reports, users, settings, licence, activity log, backups</td></tr>
   </table>
+  <div class="warn"><b>Why an Operator cannot change a saved bill</b>
+    Raising a bill and <i>amending</i> one already raised are separate
+    privileges. Counter staff can bill all day, but cannot go back and rewrite
+    yesterday's invoice, delete a document, or edit a goods-received note to
+    change your stock. Those need a Manager or Admin. It is the single most
+    useful control in the system for a shop with staff.</div>
+
   <div class="tip"><b>Give counter staff an Operator account</b>
     They get the POS and nothing that could damage your data. The restriction is
     enforced inside the program, not just hidden on screen — an Operator cannot
@@ -799,18 +806,24 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
   <ol class="steps">
     <li>Click <b>Record receipt</b>.</li>
     <li>Choose the <b>Client</b>. Their unpaid bills appear underneath.</li>
-    <li>Type the <b>Amount</b> received.</li>
+    <li>Type the <b>Amount</b> received. <b>The software immediately spreads it
+      across the oldest bills for you</b> — you do not have to do anything else.</li>
     <li>Set the <b>Mode</b> — UPI, bank transfer, cash, cheque, card.</li>
     <li>Put the UTR or cheque number in <b>Reference</b>.</li>
-    <li>Click <b>Auto-allocate</b> to settle the oldest bills first, or type against each bill yourself.</li>
+    <li>Only if you want it applied differently, type your own figures against
+      each bill, or press <b>Auto-allocate</b> to go back to oldest-first.</li>
     <li><b>Save</b>.</li>
   </ol>
   ${img('payments-allocate', 'Allocating a receipt against open bills, oldest first')}
   <p>The bills move from <b>unpaid</b> to <b>partial</b> or <b>paid</b>, and the
   customer's outstanding drops straight away.</p>
-  <div class="tip"><b>Money on account</b>
-    You can save a receipt without allocating it. It sits against the customer and
-    can be applied to a bill later.</div>
+  <div class="warn"><b>Money kept "on account"</b>
+    You may deliberately clear the boxes and save money without applying it to any
+    bill — an advance, or a payment you will match up later. The software will ask
+    you to confirm first, because until it is applied those bills keep showing
+    their full outstanding amount in the ledger and in <b>Receivables (Aging)</b>,
+    and the customer will still appear on your reminder list. To apply it later,
+    record it against the bill from this same screen.</div>
 </div>
 
 <!-- ==================== PART 7 ==================== -->

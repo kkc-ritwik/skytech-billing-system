@@ -6,8 +6,22 @@ import { z } from 'zod'
  * drift. Money fields are integer paise; quantities are numbers.
  */
 
+/**
+ * Upper bounds on quantities and money.
+ *
+ * Money is held as integer paise in JavaScript numbers, which are exact only up
+ * to 2^53. Without a ceiling, a fat-fingered quantity can produce a line total
+ * that overflows SQLite's 64-bit integer column — the document saves but can no
+ * longer be read back. These limits are far above anything a garment business
+ * will ever bill (10 lakh pieces, ₹1 crore a piece) while keeping every
+ * arithmetic result comfortably exact.
+ */
+export const MAX_QTY = 1_000_000
+export const MAX_MONEY_PAISE = 100_000_000_00 // ₹1 crore
+export const MAX_DOC_LINES = 500
+
 const optionalText = z.string().trim().max(500).optional().nullable()
-const money = z.number().int().min(0)
+const money = z.number().int().min(0).max(MAX_MONEY_PAISE)
 
 // ---- Reusable format validators (lenient: empty/null always allowed) ----
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/
@@ -93,11 +107,14 @@ export const docLineSchema = z.object({
   batchNo: optionalText,
   expiryDate: z.number().optional().nullable(),
   // PCS on the printed bill.
-  quantity: z.number().positive('Quantity must be greater than 0'),
+  quantity: z
+    .number()
+    .positive('Quantity must be greater than 0')
+    .max(MAX_QTY, `Quantity cannot exceed ${MAX_QTY.toLocaleString('en-IN')}`),
   // RATE per piece, in paise, exclusive of tax.
-  unitPrice: z.number().int().min(0),
+  unitPrice: z.number().int().min(0).max(MAX_MONEY_PAISE, 'Rate is too large'),
   discountPct: z.number().int().min(0).max(10000).default(0),
-  discountAmount: z.number().int().min(0).default(0),
+  discountAmount: z.number().int().min(0).max(MAX_MONEY_PAISE).default(0),
   taxRateBps: z.number().int().min(0).default(0)
 })
 export type DocLineInput = z.infer<typeof docLineSchema>
@@ -153,7 +170,7 @@ export const salesDocInputSchema = z.object({
 
   notes: z.string().trim().max(2000).optional().nullable(),
   termsAndConditions: z.string().trim().max(2000).optional().nullable(),
-  lines: z.array(salesDocLineSchema).min(1, 'Add at least one line item')
+  lines: z.array(salesDocLineSchema).min(1, 'Add at least one line item').max(MAX_DOC_LINES, `A document cannot have more than ${MAX_DOC_LINES} lines`)
 })
 export type SalesDocInput = z.infer<typeof salesDocInputSchema>
 
@@ -171,7 +188,7 @@ export const purchaseDocInputSchema = z.object({
   extraCharges: z.number().int().min(0).default(0),
   extraDiscount: z.number().int().min(0).default(0),
   notes: z.string().trim().max(2000).optional().nullable(),
-  lines: z.array(docLineSchema).min(1, 'Add at least one line item')
+  lines: z.array(docLineSchema).min(1, 'Add at least one line item').max(MAX_DOC_LINES, `A document cannot have more than ${MAX_DOC_LINES} lines`)
 })
 export type PurchaseDocInput = z.infer<typeof purchaseDocInputSchema>
 

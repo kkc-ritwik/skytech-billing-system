@@ -98,7 +98,7 @@ export function PosPage(): JSX.Element {
           defaultSchemeLabel: string
           defaultSchemePct: number
           defaultTransportName: string | null
-        }>('pos:context')
+        }>('app:context')
         setCompanyStateCode(ctx.companyStateCode)
         setSchemeLabel(ctx.defaultSchemeLabel)
         setSchemePct(String(ctx.defaultSchemePct / 100))

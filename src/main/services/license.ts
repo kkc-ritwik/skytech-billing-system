@@ -2,7 +2,6 @@ import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import {
-  createHash,
   createPublicKey,
   verify as cryptoVerify,
   createCipheriv,
@@ -110,6 +109,29 @@ async function getRow() {
   return getDb().select().from(licenseState).where(eq(licenseState.id, 'singleton')).get()
 }
 
+/**
+ * Re-verify the stored activation key. Returns the payload only if the key is
+ * genuinely signed by us AND bound to this machine.
+ *
+ * This is the heart of the licensing, and it runs on EVERY status read — not
+ * just at activation. The `status` column is only a cache: anyone can open the
+ * SQLite file and set it to 'active', but nobody can forge an Ed25519 signature
+ * without the private key, which never leaves the vendor. So the key is the
+ * source of truth and the column is treated as a hint.
+ */
+function verifyStoredLicense(row: LicenseRow | undefined): KeyPayload | null {
+  if (!row?.licenseKey) return null
+  try {
+    const payload = verifyLicenseKey(row.licenseKey)
+    if (payload.fp.toUpperCase() !== getMachineFingerprint().toUpperCase()) return null
+    return payload
+  } catch {
+    // Unsigned, altered, truncated, or from an older build that stored only a
+    // hash — none of which we can trust.
+    return null
+  }
+}
+
 /** Called once at startup. Establishes/reconciles trial & detects clock tamper. */
 export async function initLicense(): Promise<void> {
   const fp = getMachineFingerprint()
@@ -143,8 +165,8 @@ export async function initLicense(): Promise<void> {
   }
   if (now < lastSeen - DAY_MS) {
     // Suspicious rollback — fall back to grace unless genuinely activated+valid.
-    const stillValid =
-      row.status === 'active' && (!row.expiresAt || row.expiresAt.getTime() > lastSeen)
+    const payload = verifyStoredLicense(row)
+    const stillValid = row.status === 'active' && !!payload && (payload.exp === null || payload.exp > lastSeen)
     if (!stillValid) patch.status = 'grace'
   }
   await getDb().update(licenseState).set(patch).where(eq(licenseState.id, 'singleton'))
@@ -181,15 +203,26 @@ export async function getStatus(): Promise<LicenseStatus> {
     return locked(row, fp, 'This device has been deactivated. Enter a license key to activate.')
   }
 
-  // Activated license path
+  // Activated license path — only ever entered with a cryptographically valid
+  // key for THIS machine. A hand-edited status column will not get you here.
   if (row.status === 'active') {
-    if (!row.expiresAt) {
+    const payload = verifyStoredLicense(row)
+    if (!payload) {
+      return locked(
+        row,
+        fp,
+        'This licence could not be verified on this computer. Please enter your licence key again.'
+      )
+    }
+
+    // Expiry comes from the signed payload, never from the editable column.
+    if (payload.exp === null) {
       return usable(row, null, 'Licensed (perpetual).')
     }
-    const remaining = Math.ceil((row.expiresAt.getTime() - now) / DAY_MS)
+    const remaining = Math.ceil((payload.exp - now) / DAY_MS)
     if (remaining > 0) return usable(row, remaining, `Licensed. ${remaining} day(s) remaining.`)
     // expired subscription -> grace then locked
-    const sinceExpiry = now - row.expiresAt.getTime()
+    const sinceExpiry = now - payload.exp
     if (sinceExpiry <= GRACE_DAYS * DAY_MS) {
       return {
         ...base(row, fp),
@@ -249,14 +282,17 @@ export async function activate(key: string): Promise<LicenseStatus> {
     throw new LicenseError('This license key has already expired.')
   }
 
-  const keyHash = createHash('sha256').update(key).digest('hex')
+  // Store the signed key VERBATIM. A hash proves nothing on later reads, and
+  // re-verifying the signature on every status check is what stops someone
+  // simply setting status='active' in the database. The key is bound to this
+  // machine's fingerprint, so keeping it here leaks nothing usable elsewhere.
   const now = Date.now()
   const existing = await getRow()
   const values = {
     id: 'singleton' as const,
     status: 'active' as const,
     machineFingerprint: fp,
-    licenseKey: keyHash,
+    licenseKey: key.trim(),
     licensedTo: payload.to,
     edition: payload.ed,
     activatedAt: new Date(now),

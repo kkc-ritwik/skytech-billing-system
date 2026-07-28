@@ -1,4 +1,4 @@
-import { route } from './router'
+import { route, AppError } from './router'
 import { withValidation } from './_validate'
 import { listPurchaseDocs, getPurchaseDoc, savePurchaseDoc, deletePurchaseDoc, convertPurchaseDoc } from '../services/purchases'
 import type { PurchaseDocInput } from '@shared/dto'
@@ -8,9 +8,17 @@ export function registerPurchaseRoutes(): void {
     listPurchaseDocs(p.docType, { from: p.from, to: p.to })
   )
   route<{ id: string }, unknown>('purchases:get', 'purchase:view', (p) => getPurchaseDoc(p.id))
-  route<PurchaseDocInput, { id: string; number: string }>('purchases:save', 'purchase:create', (p, ctx) =>
-    withValidation(() => savePurchaseDoc(p, ctx.user))
-  )
+  /**
+   * As with sales: editing a saved purchase is a separate privilege from
+   * creating one. Without this an Operator could rewrite a received GRN and
+   * inflate stock at will.
+   */
+  route<PurchaseDocInput, { id: string; number: string }>('purchases:save', 'purchase:create', (p, ctx) => {
+    if (p.id && !ctx.user.permissions.includes('purchase:edit')) {
+      throw new AppError('You do not have permission to edit an existing document.', 'FORBIDDEN')
+    }
+    return withValidation(() => savePurchaseDoc(p, ctx.user))
+  })
   route<{ id: string; targetDocType: PurchaseDocInput['docType'] }, { id: string; number: string }>(
     'purchases:convert',
     'purchase:create',

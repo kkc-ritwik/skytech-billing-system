@@ -11,7 +11,7 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Select } from '@renderer/components/ui/select'
 
-interface PartyOpt { id: string; name: string; balance?: number; creditLimit?: number; creditDays?: number }
+interface PartyOpt { id: string; name: string; balance?: number; creditLimit?: number; creditDays?: number; billingStateCode?: string | null }
 interface ItemOpt {
   id: string; name: string; sku: string; hsnCode: string | null
   sellingPrice: number; purchasePrice: number; taxRateBps: number | null
@@ -56,6 +56,12 @@ export function DocumentEditor({
   const [dueDate, setDueDate] = useState('')
   const [reference, setReference] = useState('')
   const [isInterState, setIsInterState] = useState(false)
+  // The company's own GST state code, used to derive isInterState from the
+  // selected party. Loaded once when the editor opens.
+  const [companyStateCode, setCompanyStateCode] = useState<string | null>(null)
+  // Set once the user overrides the checkbox by hand, so re-picking a party
+  // does not silently undo their decision.
+  const [interStateTouched, setInterStateTouched] = useState(false)
   const [notes, setNotes] = useState('')
   const [extraLabel, setExtraLabel] = useState('')
   const [extraCharges, setExtraCharges] = useState('')
@@ -80,6 +86,7 @@ export function DocumentEditor({
     setDueDate('')
     setReference('')
     setIsInterState(false)
+    setInterStateTouched(false)
     setNotes('')
     setExtraLabel('')
     setExtraCharges('')
@@ -104,6 +111,12 @@ export function DocumentEditor({
         ])
         setParties(pp)
         setItems(ii)
+        try {
+          const ctx = await invoke<{ companyStateCode: string | null }>('app:context')
+          setCompanyStateCode(ctx.companyStateCode)
+        } catch {
+          // Without it the checkbox simply stays manual.
+        }
         if (editId) {
           const doc = await invoke<any>(isSales ? 'sales:get' : 'purchases:get', { id: editId })
           if (doc) {
@@ -186,8 +199,17 @@ export function DocumentEditor({
 
   function onPartyChange(id: string): void {
     setPartyId(id)
-    // Default a due date from the party's credit days (sales), if not already set.
     const p = parties.find((x) => x.id === id)
+
+    // Derive the GST treatment from the two state codes, exactly as the POS
+    // does. Leaving this to the user meant an inter-state bill raised here
+    // silently charged CGST+SGST instead of IGST. Skipped once the user has
+    // set the checkbox themselves, and on an existing document.
+    if (!interStateTouched && !editId && companyStateCode && p?.billingStateCode) {
+      setIsInterState(p.billingStateCode !== companyStateCode)
+    }
+
+    // Default a due date from the party's credit days (sales), if not already set.
     if (isSales && p?.creditDays && p.creditDays > 0 && !dueDate) {
       const d = new Date(issueDate)
       d.setDate(d.getDate() + p.creditDays)
@@ -338,7 +360,15 @@ export function DocumentEditor({
       </div>
 
       <label className="mt-3 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={isInterState} onChange={(e) => setIsInterState(e.target.checked)} className="size-4" />
+        <input
+          type="checkbox"
+          checked={isInterState}
+          onChange={(e) => {
+            setInterStateTouched(true)
+            setIsInterState(e.target.checked)
+          }}
+          className="size-4"
+        />
         Inter-state supply (IGST instead of CGST + SGST)
       </label>
 

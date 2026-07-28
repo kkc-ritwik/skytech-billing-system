@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Plus, Wallet } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
+import { confirmAction } from '@renderer/store/confirm'
 import { useApp } from '@renderer/store/app'
 import { formatINR, formatDate, toPaise, toRupees } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
@@ -38,6 +39,8 @@ export function PaymentsPage(): JSX.Element {
   const [reference, setReference] = useState('')
   const [openDocs, setOpenDocs] = useState<OpenDoc[]>([])
   const [alloc, setAlloc] = useState<Record<string, string>>({})
+  /** True once the user edits an allocation by hand, which stops the automatic fill. */
+  const [allocTouched, setAllocTouched] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -54,7 +57,7 @@ export function PaymentsPage(): JSX.Element {
 
   async function openRecord(): Promise<void> {
     setPartyId(''); setAmount(''); setReference(''); setMode('upi')
-    setPaidAt(new Date().toISOString().slice(0, 10)); setOpenDocs([]); setAlloc({})
+    setPaidAt(new Date().toISOString().slice(0, 10)); setOpenDocs([]); setAlloc({}); setAllocTouched(false)
     try {
       setParties(await invoke<PartyOpt[]>('parties:list', { partyType: direction === 'inbound' ? 'customer' : 'vendor', activeOnly: true }))
     } catch { /* ignore */ }
@@ -64,23 +67,47 @@ export function PaymentsPage(): JSX.Element {
   async function onPartyChange(id: string): Promise<void> {
     setPartyId(id)
     setAlloc({})
+    setAllocTouched(false)
     if (!id) return setOpenDocs([])
     try {
       setOpenDocs(await invoke<OpenDoc[]>('payments:openDocs', { direction, partyId: id }))
     } catch { setOpenDocs([]) }
   }
 
+  const buildAllocation = useCallback(
+    (paise: number): Record<string, string> => {
+      let remaining = paise
+      const next: Record<string, string> = {}
+      for (const d of openDocs) {
+        if (remaining <= 0) break
+        const apply = Math.min(remaining, d.outstanding)
+        next[d.id] = String(toRupees(apply))
+        remaining -= apply
+      }
+      return next
+    },
+    [openDocs]
+  )
+
   function autoAllocate(): void {
-    let remaining = toPaise(amount || '0')
-    const next: Record<string, string> = {}
-    for (const d of openDocs) {
-      if (remaining <= 0) break
-      const apply = Math.min(remaining, d.outstanding)
-      next[d.id] = String(toRupees(apply))
-      remaining -= apply
-    }
-    setAlloc(next)
+    setAllocTouched(false)
+    setAlloc(buildAllocation(toPaise(amount || '0')))
   }
+
+  /**
+   * Settle the oldest open bills by default.
+   *
+   * A receipt saved with no allocation is money the shop has genuinely
+   * received, but every report that matters — aging, receivables, a bill's
+   * paid/unpaid badge — is computed per document. Leaving allocation to a
+   * button the user must remember to press means a customer who has paid keeps
+   * showing a full outstanding balance and gets chased for it. So allocate as
+   * the default, and step aside the moment the user edits the figures himself.
+   */
+  useEffect(() => {
+    if (allocTouched) return
+    setAlloc(buildAllocation(toPaise(amount || '0')))
+  }, [amount, openDocs, allocTouched, buildAllocation])
 
   async function save(): Promise<void> {
     setSaving(true)
@@ -88,6 +115,18 @@ export function PaymentsPage(): JSX.Element {
       const allocations = openDocs
         .filter((d) => toPaise(alloc[d.id] || '0') > 0)
         .map((d) => ({ refType: d.refType, documentId: d.id, amount: toPaise(alloc[d.id]) }))
+      if (allocations.length === 0 && openDocs.length > 0 && toPaise(amount || '0') > 0) {
+        const ok = await confirmAction({
+          title: 'Record this money without settling any bill?',
+          message:
+            `This ${direction === 'inbound' ? 'receipt' : 'payment'} is not applied to any of the ` +
+            `${openDocs.length} open bill(s). They will keep showing their full outstanding amount ` +
+            'in the ledger and the aging report. Use Auto-allocate to settle the oldest bills first.',
+          confirmLabel: 'Keep it on account',
+          cancelLabel: 'Go back'
+        })
+        if (!ok) { setSaving(false); return }
+      }
       const payload: PaymentInput = {
         direction,
         partyId,
@@ -193,7 +232,8 @@ export function PaymentsPage(): JSX.Element {
                   <span className="font-mono text-xs">{d.number}</span>
                   <span className="ml-auto text-muted-foreground">Outstanding {formatINR(d.outstanding)}</span>
                   <Input type="number" step="0.01" className="h-8 w-28 text-right" placeholder="0.00"
-                    value={alloc[d.id] ?? ''} onChange={(e) => setAlloc((a) => ({ ...a, [d.id]: e.target.value }))} />
+                    value={alloc[d.id] ?? ''}
+                    onChange={(e) => { setAllocTouched(true); setAlloc((a) => ({ ...a, [d.id]: e.target.value })) }} />
                 </div>
               ))}
             </div>
