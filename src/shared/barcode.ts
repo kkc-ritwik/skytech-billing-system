@@ -93,6 +93,17 @@ export interface BarcodeSvgOptions {
  * `printToPDF` document or in the renderer via dangerouslySetInnerHTML — the
  * only dynamic text is the caption, which is escaped.
  */
+/**
+ * Total module count for a symbol, including both quiet zones.
+ *
+ * A module is the width of the narrowest bar. Label sizing needs this to work
+ * backwards from "the label is 38 mm wide" to "each bar will be 0.31 mm", which
+ * is what decides whether a scanner can actually read the printed label.
+ */
+export function code128ModuleCount(data: string, quietZone = 10): number {
+  return code128Widths(data).reduce((a, b) => a + b, 0) + quietZone * 2
+}
+
 export function code128Svg(data: string, opts: BarcodeSvgOptions = {}): string {
   const mw = opts.moduleWidth ?? 2
   const height = opts.height ?? 60

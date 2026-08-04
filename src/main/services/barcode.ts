@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql, inArray, like, or } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { items, taxRates, stockLedger } from '../db/schema'
-import { buildBarcode, normaliseScan, code128Svg, isValidInternalBarcode } from '@shared/barcode'
+import { buildBarcode, normaliseScan, code128Svg, code128ModuleCount, isValidInternalBarcode } from '@shared/barcode'
 import type { AuthUser } from '@shared/ipc'
 import { audit } from './audit'
 import { getCompany, getSettings } from './settings'
@@ -183,21 +183,123 @@ export async function posContext(): Promise<PosContext> {
   }
 }
 
-export interface LabelRequest {
-  itemIds: string[]
-  /** Labels printed per item — normally one per piece in stock. */
-  copies?: number
-  /** Show the selling price on the label. */
-  showPrice?: boolean
+export interface LabelLine {
+  itemId: string
+  copies: number
 }
 
 /**
- * Build the HTML for a sheet of barcode labels (65 per A4 sheet, the common
- * 38.1 x 21.2 mm address-label stock). Rendered to PDF by the pdf service.
+ * How labels sit on the physical stock, all in millimetres so a shop can copy
+ * the numbers straight off the label packet.
+ */
+export interface LabelSheet {
+  pageWidthMm: number
+  pageHeightMm: number
+  marginTopMm: number
+  marginRightMm: number
+  marginBottomMm: number
+  marginLeftMm: number
+  labelWidthMm: number
+  labelHeightMm: number
+  columnGapMm: number
+  rowGapMm: number
+  showName: boolean
+  showSku: boolean
+  showPrice: boolean
+  skipLabels: number
+}
+
+export interface LabelRequest {
+  lines: LabelLine[]
+  sheet: LabelSheet
+}
+
+/** A4, 65 address labels — the stock most Indian stationers carry. */
+export const DEFAULT_LABEL_SHEET: LabelSheet = {
+  pageWidthMm: 210,
+  pageHeightMm: 297,
+  marginTopMm: 8,
+  marginRightMm: 5,
+  marginBottomMm: 8,
+  marginLeftMm: 5,
+  labelWidthMm: 38.1,
+  labelHeightMm: 21.2,
+  columnGapMm: 0,
+  rowGapMm: 0,
+  showName: true,
+  showSku: true,
+  showPrice: true,
+  skipLabels: 0
+}
+
+/**
+ * How the requested labels tile onto the sheet.
+ *
+ * `moduleWidthMm` is the printed width of the narrowest bar. Scanners need
+ * roughly 0.19 mm to read reliably, so this is what tells a shop that the label
+ * size they typed is too small *before* they waste a sheet finding out.
+ */
+export interface LabelLayout {
+  columns: number
+  rows: number
+  perSheet: number
+  totalLabels: number
+  sheets: number
+  moduleWidthMm: number
+  tooSmallToScan: boolean
+}
+
+/** Narrowest bar a typical handheld scanner reads dependably, in mm. */
+export const MIN_SCANNABLE_MODULE_MM = 0.19
+
+export function computeLabelLayout(sheet: LabelSheet, totalLabels: number, sampleBarcode = '220000000018'): LabelLayout {
+  const usableW = sheet.pageWidthMm - sheet.marginLeftMm - sheet.marginRightMm
+  const usableH = sheet.pageHeightMm - sheet.marginTopMm - sheet.marginBottomMm
+
+  // n labels occupy n*w + (n-1)*gap. Solve for the largest n that still fits.
+  const fit = (usable: number, size: number, gap: number): number =>
+    size <= 0 ? 0 : Math.max(0, Math.floor((usable + gap) / (size + gap) + 1e-6))
+
+  const columns = fit(usableW, sheet.labelWidthMm, sheet.columnGapMm)
+  const rows = fit(usableH, sheet.labelHeightMm, sheet.rowGapMm)
+  const perSheet = columns * rows
+  const withSkips = totalLabels + Math.max(0, sheet.skipLabels)
+  const sheets = perSheet > 0 ? Math.ceil(withSkips / perSheet) : 0
+
+  // The barcode is drawn across the label minus a 1 mm padding either side.
+  const barcodeWidthMm = Math.max(0, sheet.labelWidthMm - 2)
+  const modules = code128ModuleCount(sampleBarcode, LABEL_QUIET_ZONE)
+  const moduleWidthMm = modules > 0 ? barcodeWidthMm / modules : 0
+
+  return {
+    columns,
+    rows,
+    perSheet,
+    totalLabels,
+    sheets,
+    moduleWidthMm,
+    tooSmallToScan: moduleWidthMm > 0 && moduleWidthMm < MIN_SCANNABLE_MODULE_MM
+  }
+}
+
+/** Quiet zone in modules. Code 128 requires 10; less and scanners struggle. */
+const LABEL_QUIET_ZONE = 10
+
+/**
+ * Build the printable HTML for a run of barcode labels.
+ *
+ * Pagination is worked out here rather than left to the browser: each sheet is
+ * an explicitly sized block with a forced page break, so what the shop sees in
+ * the preview is exactly what comes out of the printer. `@page` carries the
+ * sheet size in mm and the PDF is rendered with `preferCSSPageSize`, which is
+ * what lets a 50 x 25 mm thermal roll and an A4 sheet share one code path.
  */
 export async function renderLabelSheetHtml(req: LabelRequest): Promise<string> {
-  const ids = req.itemIds.filter(Boolean)
-  if (!ids.length) throw Object.assign(new Error('Select at least one item to print labels for.'), { code: 'VALIDATION' })
+  const lines = (req.lines ?? []).filter((l) => l?.itemId && l.copies > 0)
+  if (!lines.length) {
+    throw Object.assign(new Error('Select at least one item to print labels for.'), { code: 'VALIDATION' })
+  }
+  const sheet = req.sheet ?? DEFAULT_LABEL_SHEET
 
   const rows = await getDb()
     .select({
@@ -205,48 +307,125 @@ export async function renderLabelSheetHtml(req: LabelRequest): Promise<string> {
       sku: items.sku,
       name: items.name,
       barcode: items.barcode,
-      sellingPrice: items.sellingPrice,
-      cutLength: items.cutLength
+      sellingPrice: items.sellingPrice
     })
     .from(items)
-    .where(inArray(items.id, ids))
+    .where(inArray(items.id, lines.map((l) => l.itemId)))
 
-  const missing = rows.filter((r) => !r.barcode)
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const unknown = lines.filter((l) => !byId.has(l.itemId))
+  if (unknown.length) {
+    throw Object.assign(new Error(`${unknown.length} selected item(s) no longer exist.`), { code: 'VALIDATION' })
+  }
+  const missing = lines.filter((l) => !byId.get(l.itemId)!.barcode)
   if (missing.length) {
+    const names = missing.slice(0, 3).map((l) => byId.get(l.itemId)!.name).join(', ')
     throw Object.assign(
-      new Error(`${missing.length} selected item(s) have no barcode yet. Generate barcodes first.`),
+      new Error(
+        `${missing.length} selected item(s) have no barcode yet (${names}${missing.length > 3 ? '…' : ''}). ` +
+          'Use "Generate barcodes" first.'
+      ),
       { code: 'VALIDATION' }
     )
   }
 
-  const copies = Math.max(1, Math.min(200, req.copies ?? 1))
-  const esc = (s: unknown): string =>
-    String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
+  const esc = (v: unknown): string =>
+    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
-  const cells: string[] = []
-  for (const r of rows) {
-    for (let i = 0; i < copies; i++) {
-      cells.push(`<div class="label">
-        <div class="nm">${esc(r.name)}</div>
-        <div class="bc">${code128Svg(r.barcode!, { moduleWidth: 1.1, height: 26, fontSize: 7, quietZone: 6 })}</div>
-        <div class="ft">
-          <span>${esc(r.sku)}</span>
-          ${req.showPrice !== false ? `<span>&#8377;${(r.sellingPrice / 100).toFixed(2)}</span>` : ''}
-        </div>
-      </div>`)
-    }
+  const layout = computeLabelLayout(sheet, lines.reduce((a, l) => a + l.copies, 0))
+  if (layout.perSheet < 1) {
+    throw Object.assign(
+      new Error('No label fits on the sheet at these measurements. Check the sheet size, margins and label size.'),
+      { code: 'VALIDATION' }
+    )
   }
 
+  // Geometry, in mm, inside one label.
+  const padMm = 1
+  const innerW = sheet.labelWidthMm - padMm * 2
+  const innerH = sheet.labelHeightMm - padMm * 2
+  const nameH = sheet.showName ? Math.min(4, innerH * 0.22) : 0
+  const footH = sheet.showSku || sheet.showPrice ? Math.min(3.2, innerH * 0.18) : 0
+  const barBandH = Math.max(2, innerH - nameH - footH)
+
+  /**
+   * The SVG carries a viewBox, so CSS decides its final size; only the aspect
+   * ratio matters. Pick the bar height in user units that makes the symbol come
+   * out `barBandH` mm tall once scaled to `innerW` mm wide.
+   */
+  function barcodeSvg(code: string): string {
+    const mwUnits = 1
+    const modules = code128ModuleCount(code, LABEL_QUIET_ZONE)
+    const totalWUnits = modules * mwUnits
+    const captionMm = Math.min(2.4, barBandH * 0.34)
+    const scale = totalWUnits / innerW // user units per mm
+    const fontUnits = captionMm * scale
+    const barHeightUnits = (barBandH - captionMm) * scale
+    return code128Svg(code, {
+      moduleWidth: mwUnits,
+      height: Math.max(1, barHeightUnits),
+      fontSize: Math.max(1, fontUnits),
+      quietZone: LABEL_QUIET_ZONE
+    })
+  }
+
+  // Flatten to one cell per printed label, then chunk into sheets.
+  const cells: string[] = []
+  for (let i = 0; i < Math.max(0, sheet.skipLabels); i++) cells.push('<div class="label blank"></div>')
+  for (const line of lines) {
+    const r = byId.get(line.itemId)!
+    const price = `&#8377;${(r.sellingPrice / 100).toFixed(2)}`
+    const foot =
+      sheet.showSku || sheet.showPrice
+        ? `<div class="ft">${sheet.showSku ? `<span class="sku">${esc(r.sku)}</span>` : '<span></span>'}${
+            sheet.showPrice ? `<span class="pr">${price}</span>` : ''
+          }</div>`
+        : ''
+    const cell =
+      `<div class="label">` +
+      (sheet.showName ? `<div class="nm">${esc(r.name)}</div>` : '') +
+      `<div class="bc">${barcodeSvg(r.barcode!)}</div>` +
+      foot +
+      `</div>`
+    for (let i = 0; i < line.copies; i++) cells.push(cell)
+  }
+
+  const pages: string[] = []
+  for (let i = 0; i < cells.length; i += layout.perSheet) {
+    pages.push(`<div class="sheet">${cells.slice(i, i + layout.perSheet).join('')}</div>`)
+  }
+
+  const n = (v: number): string => String(Math.round(v * 1000) / 1000)
+
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-    @page { size: A4; margin: 8mm 5mm; }
+    @page { size: ${n(sheet.pageWidthMm)}mm ${n(sheet.pageHeightMm)}mm; margin: 0; }
     * { box-sizing: border-box; }
-    body { margin:0; font-family:'Segoe UI',Arial,sans-serif; }
-    .sheet { display:grid; grid-template-columns:repeat(5, 38.1mm); grid-auto-rows:21.2mm; gap:0; }
-    .label { padding:1mm; display:flex; flex-direction:column; align-items:center;
-             justify-content:center; overflow:hidden; page-break-inside:avoid; }
-    .nm { font-size:6pt; font-weight:600; line-height:1.1; text-align:center; max-height:2.2em;
-          overflow:hidden; width:100%; }
-    .bc svg { display:block; max-width:100%; height:auto; }
-    .ft { display:flex; justify-content:space-between; width:100%; font-size:5.5pt; padding:0 1mm; }
-  </style></head><body><div class="sheet">${cells.join('')}</div></body></html>`
+    html, body { margin:0; padding:0; background:#fff; }
+    body { font-family:'Segoe UI',Arial,sans-serif; -webkit-print-color-adjust:exact; }
+    .sheet {
+      width:${n(sheet.pageWidthMm)}mm; height:${n(sheet.pageHeightMm)}mm;
+      padding:${n(sheet.marginTopMm)}mm ${n(sheet.marginRightMm)}mm ${n(sheet.marginBottomMm)}mm ${n(sheet.marginLeftMm)}mm;
+      display:grid;
+      grid-template-columns:repeat(${layout.columns}, ${n(sheet.labelWidthMm)}mm);
+      grid-auto-rows:${n(sheet.labelHeightMm)}mm;
+      column-gap:${n(sheet.columnGapMm)}mm; row-gap:${n(sheet.rowGapMm)}mm;
+      align-content:start; justify-content:start;
+      page-break-after:always; break-after:page; overflow:hidden;
+    }
+    .sheet:last-child { page-break-after:auto; break-after:auto; }
+    .label {
+      width:${n(sheet.labelWidthMm)}mm; height:${n(sheet.labelHeightMm)}mm; padding:${n(padMm)}mm;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      overflow:hidden; page-break-inside:avoid; break-inside:avoid;
+    }
+    .label.blank { visibility:hidden; }
+    .nm { height:${n(nameH)}mm; line-height:${n(nameH)}mm; font-size:${n(nameH * 0.82)}mm; font-weight:600;
+          text-align:center; width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .bc { width:${n(innerW)}mm; height:${n(barBandH)}mm; display:flex; align-items:center; justify-content:center; }
+    .bc svg { width:100%; height:100%; display:block; }
+    .ft { height:${n(footH)}mm; line-height:${n(footH)}mm; font-size:${n(footH * 0.78)}mm;
+          display:flex; justify-content:space-between; align-items:center; width:100%; gap:1mm; }
+    .ft .sku { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .ft .pr { font-weight:700; white-space:nowrap; }
+  </style></head><body>${pages.join('')}</body></html>`
 }

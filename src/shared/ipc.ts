@@ -52,6 +52,12 @@ export interface LicenseStatus {
   expiresAt: number | null
   machineFingerprint: string
   message: string
+  /**
+   * Set when the install was activated by an older build that stored only a
+   * hash of the key. The app keeps working, but the key must be entered once
+   * more before the grace period runs out.
+   */
+  needsReactivation?: boolean
 }
 
 /** Channel naming convention: "<domain>:<action>". */

@@ -78,9 +78,14 @@ export function AppLayout(): JSX.Element {
                 Trial · {license.daysRemaining}d left
               </Badge>
             )}
-            {license.status === 'active' && (
+            {license.status === 'active' && !license.needsReactivation && (
               <Badge variant="success" className="w-full justify-center">
                 Licensed{license.daysRemaining ? ` · ${license.daysRemaining}d` : ''}
+              </Badge>
+            )}
+            {license.status === 'active' && license.needsReactivation && (
+              <Badge variant="warning" className="w-full justify-center">
+                Re-enter key · {license.daysRemaining}d
               </Badge>
             )}
             {license.status === 'grace' && (

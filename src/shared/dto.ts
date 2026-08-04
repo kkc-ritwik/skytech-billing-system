@@ -277,3 +277,74 @@ export const partyInputSchema = z.object({
   isActive: z.boolean()
 })
 export type PartyInput = z.infer<typeof partyInputSchema>
+
+// ---------------------------------------------------------------------------
+// Barcode label sheets
+// ---------------------------------------------------------------------------
+
+/** Most labels a single print job may produce, to keep the PDF renderable. */
+export const MAX_LABELS_PER_JOB = 5000
+/** Copies of one item on one job. A shop tagging a full bale needs hundreds. */
+export const MAX_LABEL_COPIES = 1000
+
+/** A millimetre measurement on a label sheet. */
+const mm = (min: number, max: number, what: string): z.ZodNumber =>
+  z
+    .number({ invalid_type_error: `${what} must be a number in mm` })
+    .min(min, `${what} must be at least ${min} mm`)
+    .max(max, `${what} cannot exceed ${max} mm`)
+
+export const labelSheetSchema = z
+  .object({
+    pageWidthMm: mm(20, 1000, 'Sheet width'),
+    pageHeightMm: mm(20, 1000, 'Sheet height'),
+    marginTopMm: mm(0, 200, 'Top margin'),
+    marginRightMm: mm(0, 200, 'Right margin'),
+    marginBottomMm: mm(0, 200, 'Bottom margin'),
+    marginLeftMm: mm(0, 200, 'Left margin'),
+    labelWidthMm: mm(10, 1000, 'Label width'),
+    labelHeightMm: mm(6, 1000, 'Label height'),
+    columnGapMm: mm(0, 100, 'Gap between columns'),
+    rowGapMm: mm(0, 100, 'Gap between rows'),
+    showName: z.boolean(),
+    showSku: z.boolean(),
+    showPrice: z.boolean(),
+    /**
+     * Labels to leave blank at the start, so a part-used sheet can be fed back
+     * through the printer instead of thrown away.
+     */
+    skipLabels: z.number().int().min(0).max(1000)
+  })
+  .superRefine((s, ctx) => {
+    const usableW = s.pageWidthMm - s.marginLeftMm - s.marginRightMm
+    const usableH = s.pageHeightMm - s.marginTopMm - s.marginBottomMm
+    if (s.labelWidthMm > usableW + 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['labelWidthMm'],
+        message: `A ${s.labelWidthMm} mm label does not fit in ${usableW.toFixed(1)} mm of usable width. Reduce the label width or the side margins.`
+      })
+    }
+    if (s.labelHeightMm > usableH + 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['labelHeightMm'],
+        message: `A ${s.labelHeightMm} mm label does not fit in ${usableH.toFixed(1)} mm of usable height. Reduce the label height or the top/bottom margins.`
+      })
+    }
+  })
+export type LabelSheet = z.infer<typeof labelSheetSchema>
+
+export const labelRequestSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        itemId: z.string().min(1),
+        copies: z.number().int().min(1, 'Print at least 1 label').max(MAX_LABEL_COPIES, `At most ${MAX_LABEL_COPIES} copies of one item`)
+      })
+    )
+    .min(1, 'Select at least one item')
+    .max(1000, 'Too many different items in one job'),
+  sheet: labelSheetSchema
+})
+export type LabelRequestInput = z.infer<typeof labelRequestSchema>

@@ -531,19 +531,60 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
 
 <div class="section">
   <h2>12. Printing and sticking barcode labels</h2>
+  <p>Click <b>Print labels</b> on the Items page. You choose <i>which</i> designs
+  to print, <i>how many</i> labels each one needs, and <i>what size</i> the label
+  stock is — nothing is fixed.</p>
+  ${img('label-designer', 'The label designer: pick items on the left, set the sheet in millimetres on the right')}
+
+  <h3>Step 1 — pick the designs and the quantities</h3>
   <ol class="steps">
-    <li>On the Items page, use the search box if you only want some designs.</li>
-    <li>Click <b>Print labels</b>.</li>
-    <li>Choose where to save the PDF; it opens automatically.</li>
-    <li>Print it on A4 label sheets (65 labels per sheet, 38.1 × 21.2 mm — the common address-label size from any stationery shop).</li>
-    <li>Stick one label on each piece, or on the fold of each pile.</li>
+    <li>Search by design name, SKU or barcode.</li>
+    <li>Tick the designs you want. Only barcoded items are listed.</li>
+    <li>Type how many labels each one needs, or use the <b>−</b> and <b>+</b>
+      buttons. Every design can have a different number — 3 of one, 40 of another.</li>
+    <li><b>Add all</b> ticks everything currently listed.</li>
+    <li><b>Match stock</b> sets each design to one label per piece you hold —
+      the usual job after a delivery.</li>
   </ol>
-  <p>Each label carries the design name, the barcode, its digits, the SKU and the
-  selling price.</p>
+
+  <h3>Step 2 — set your label size in millimetres</h3>
+  <p>Pick your stock from <b>Label stock</b>, or choose <b>Custom size…</b> and
+  type the measurements from the label packet:</p>
+  <table>
+    <tr><th>Box</th><th>What to measure</th></tr>
+    <tr><td><b>Sheet width / height</b></td><td>The whole sheet, or for a thermal roll, one label.</td></tr>
+    <tr><td><b>Label width / height</b></td><td>One sticker.</td></tr>
+    <tr><td><b>Margins</b></td><td>The blank border before the first sticker starts.</td></tr>
+    <tr><td><b>Gaps</b></td><td>The space between stickers, if any. Often 0.</td></tr>
+    <tr><td><b>Skip used labels</b></td><td>Feeding a part-used sheet back in? Leave that many blank.</td></tr>
+  </table>
+  <p>The software works out how many fit — it shows
+  <b>“5 across × 13 down = 65 per sheet”</b> at the bottom, and how many sheets
+  the job needs. The preview beside it is the real printout, not a drawing.</p>
+  <p>Ready-made sizes included: A4 sheets of 65, 48, 24 and 12 labels, and
+  thermal rolls at 50 × 25 mm and 38 × 25 mm, one or two across.</p>
+
+  <h3>Step 3 — choose what goes on the label</h3>
+  <p>Tick <b>Item name</b>, <b>SKU</b> and <b>Price</b> as you like. On a very
+  small label, switching the name off leaves more room for the bars.</p>
+
+  <h3>Step 4 — print</h3>
+  <ol class="steps">
+    <li>Click <b>Print labels</b> and choose where to save the PDF; it opens automatically.</li>
+    <li>Print it, then stick one label on each piece or on the fold of each pile.</li>
+  </ol>
+  <p>Your sheet measurements are remembered, so the next print run needs only the
+  items and quantities.</p>
+
+  <div class="warn"><b>If the software warns that the bars are too thin</b>
+    Below about 0.19 mm per bar, handheld scanners start misreading. The software
+    checks this as you type and warns you before you waste a sheet. Use a wider
+    label, or switch the item name off to give the bars more room.</div>
   <div class="warn"><b>Printing tips</b>
     Print at <b>100% / Actual size</b> — never "Fit to page", which shrinks the
     bars until scanners cannot read them. Use a laser printer if you have one;
-    inkjet bars can smudge and fail to scan.</div>
+    inkjet bars can smudge and fail to scan. For a thermal barcode printer, set
+    the paper size in the printer driver to the same millimetres you typed here.</div>
 </div>
 
 <div class="section">
@@ -901,6 +942,24 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
   <p><b>Restore from backup…</b>, pick the file, and confirm. This
   <b>overwrites everything</b> currently in the app and restarts it. You will be
   asked to confirm in plain words first.</p>
+  <h3>Installing a new version of Shailee-GRMS</h3>
+  <p>When Shailee send you an updated installer, just run it on the same
+  computer. It replaces the old version in place — <b>your data is not touched</b>.
+  Every bill, customer, item, stock figure and setting stays exactly as it was,
+  because your data lives in a separate folder that the installer never goes near.
+  You do not need to uninstall first, and you do not need to restore a backup.</p>
+  <div class="tip"><b>Take a backup first anyway</b>
+    Updating is safe, but a backup before any install costs you thirty seconds
+    and covers you against a power cut halfway through.</div>
+  <div class="warn"><b>One-time step after this update</b>
+    If your copy was already activated with a licence key, the first launch after
+    updating may ask you to <b>enter that same key once more</b>. This is a
+    one-off: the update improved how licences are checked, and the older record
+    cannot be re-checked the new way. Your Machine ID has not changed, so the key
+    you already have will work. The software keeps running normally for 30 days
+    while you do it, and the sidebar shows an orange <b>Re-enter key</b> badge as
+    a reminder. Lost the key? Ask Shailee — they can re-send it.</div>
+
   <h3>Moving to a new computer</h3>
   <ol class="steps">
     <li>Create a backup on the old computer.</li>

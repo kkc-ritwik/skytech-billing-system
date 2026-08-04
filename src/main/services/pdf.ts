@@ -1,5 +1,8 @@
 import { BrowserWindow, dialog, shell } from 'electron'
-import { writeFileSync } from 'fs'
+import { writeFileSync, rmSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { randomUUID } from 'crypto'
 import QRCode from 'qrcode'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
@@ -184,20 +187,36 @@ async function buildTextileModel(id: string): Promise<{ model: TextileModel; num
 }
 
 /** Render to a PDF buffer. 'thermal' uses CSS @page sizing for a continuous roll. */
-async function renderPdfBuffer(html: string, paperSize: 'A4' | 'A5' | 'thermal'): Promise<Buffer> {
+async function renderPdfBuffer(
+  html: string,
+  paperSize: 'A4' | 'A5' | 'thermal' | 'css'
+): Promise<Buffer> {
   const win = new BrowserWindow({
     show: false,
     webPreferences: { offscreen: true, sandbox: true, contextIsolation: true }
   })
+  // Load from a temp file rather than a data: URL. A big label run — hundreds of
+  // labels, each an inline SVG — makes a data: URL large enough for Chromium to
+  // refuse the navigation outright (ERR_FAILED), which would fail the export at
+  // exactly the moment a shop is tagging a whole delivery.
+  const tmp = join(tmpdir(), `shailee-print-${randomUUID()}.html`)
   try {
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    writeFileSync(tmp, html, 'utf8')
+    await win.loadFile(tmp)
+    // 'css' defers entirely to the document's own @page rule, which is how an
+    // arbitrary label size in mm reaches the printer without being coerced to A4.
     const data =
-      paperSize === 'thermal'
+      paperSize === 'thermal' || paperSize === 'css'
         ? await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
         : await win.webContents.printToPDF({ pageSize: paperSize, printBackground: true, margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } })
     return data
   } finally {
     win.destroy()
+    try {
+      rmSync(tmp, { force: true })
+    } catch {
+      /* a leftover temp file is harmless */
+    }
   }
 }
 
@@ -248,7 +267,7 @@ export async function exportDocumentPdf(
 /** Generate a sheet of barcode labels (A4, 65-up) and open it for printing. */
 export async function exportBarcodeLabels(req: LabelRequest, user: AuthUser): Promise<{ path: string }> {
   const html = await renderLabelSheetHtml(req)
-  const buffer = await renderPdfBuffer(html, 'A4')
+  const buffer = await renderPdfBuffer(html, 'css')
 
   const res = await dialog.showSaveDialog({
     title: 'Save barcode labels',
@@ -263,7 +282,12 @@ export async function exportBarcodeLabels(req: LabelRequest, user: AuthUser): Pr
     username: user.username,
     action: 'item.barcode.labels',
     entityType: 'item',
-    details: { count: req.itemIds.length, copies: req.copies ?? 1 }
+    details: {
+      items: req.lines.length,
+      labels: req.lines.reduce((a, l) => a + l.copies, 0),
+      sheetMm: `${req.sheet.pageWidthMm}x${req.sheet.pageHeightMm}`,
+      labelMm: `${req.sheet.labelWidthMm}x${req.sheet.labelHeightMm}`
+    }
   })
   void shell.openPath(res.filePath)
   return { path: res.filePath }

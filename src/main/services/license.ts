@@ -89,7 +89,7 @@ function writeLock(data: object): void {
   }
 }
 
-function readLock(): { trialStartedAt?: number; trialEndsAt?: number } | null {
+function readLock(): { trialStartedAt?: number; trialEndsAt?: number; reactivateBy?: number } | null {
   try {
     if (!existsSync(lockFilePath())) return null
     const buf = Buffer.from(readFileSync(lockFilePath(), 'utf8'), 'base64')
@@ -130,6 +130,36 @@ function verifyStoredLicense(row: LicenseRow | undefined): KeyPayload | null {
     // hash — none of which we can trust.
     return null
   }
+}
+
+/**
+ * Builds up to and including 0.1.0 stored only a SHA-256 *hash* of the
+ * activation key, which cannot be re-verified against the signature.
+ *
+ * A shop that activated on one of those builds would otherwise be locked out
+ * the moment it updated — mid-trade, through no fault of its own. So a legacy
+ * hash earns a bounded grace period instead: the app keeps working while it
+ * asks, plainly, for the key to be entered once more. The same key works, since
+ * it is bound to a machine ID that has not changed.
+ */
+function isLegacyHashedKey(key: string | null | undefined): boolean {
+  return !!key && /^[0-9a-f]{64}$/i.test(key.trim())
+}
+
+/** Days an already-activated install keeps working after updating to signed keys. */
+const REACTIVATION_GRACE_DAYS = 30
+
+/**
+ * Deadline for re-entering the key, anchored in the encrypted lock file rather
+ * than the database so it cannot be extended by editing a column. Set once, on
+ * the first run that meets a legacy activation.
+ */
+function reactivationDeadline(now: number): number {
+  const lock = readLock() ?? {}
+  if (typeof lock.reactivateBy === 'number') return lock.reactivateBy
+  const due = now + REACTIVATION_GRACE_DAYS * DAY_MS
+  writeLock({ ...lock, reactivateBy: due })
+  return due
 }
 
 /** Called once at startup. Establishes/reconciles trial & detects clock tamper. */
@@ -208,6 +238,27 @@ export async function getStatus(): Promise<LicenseStatus> {
   if (row.status === 'active') {
     const payload = verifyStoredLicense(row)
     if (!payload) {
+      // Activated on a build that stored only a hash: keep the shop trading,
+      // but ask for the key once, with a visible deadline.
+      if (isLegacyHashedKey(row.licenseKey) && row.machineFingerprint?.toUpperCase() === fp.toUpperCase()) {
+        const due = reactivationDeadline(now)
+        const daysLeft = Math.ceil((due - now) / DAY_MS)
+        if (daysLeft > 0) {
+          return {
+            ...usable(row, daysLeft, ''),
+            needsReactivation: true,
+            message:
+              `Please enter your licence key once to finish this update. ` +
+              `Your Machine ID has not changed, so the key you already have will work. ` +
+              `${daysLeft} day(s) remaining.`
+          }
+        }
+        return locked(
+          row,
+          fp,
+          'This update needs your licence key entered once. Your Machine ID has not changed, so the key you already have will work.'
+        )
+      }
       return locked(
         row,
         fp,

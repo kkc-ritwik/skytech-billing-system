@@ -16,6 +16,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Card } from '@renderer/components/ui/card'
 import { Dialog } from '@renderer/components/ui/dialog'
 import { Table, THead, TBody, TR, TH, TD } from '@renderer/components/ui/table'
+import { LabelPrintDialog } from '@renderer/components/LabelPrintDialog'
 
 interface ItemRow {
   id: string
@@ -105,6 +106,8 @@ function barcodePreview(value: string): string {
 
 export function ItemsPage(): JSX.Element {
   const canManage = useApp((s) => s.has('items:manage'))
+  const [labelOpen, setLabelOpen] = useState(false)
+  const [labelSelection, setLabelSelection] = useState<string[]>([])
   const [rows, setRows] = useState<ItemRow[]>([])
   const [refs, setRefs] = useState<Refs>({ units: [], taxRates: [], categories: [], defaultCutLength: 0 })
   const [search, setSearch] = useState('')
@@ -132,24 +135,14 @@ export function ItemsPage(): JSX.Element {
     }
   }
 
-  /** Print a label sheet for whatever the current search is showing. */
-  async function printLabels(): Promise<void> {
-    const withBarcodes = rows.filter((r) => r.barcode)
-    if (!withBarcodes.length) {
+  /** Open the label designer, pre-ticking a single row when one was clicked. */
+  function openLabels(preselect?: string[]): void {
+    if (!rows.some((r) => r.barcode)) {
       toast.error('No barcoded items in view. Generate barcodes first.')
       return
     }
-    setBarcodeBusy(true)
-    try {
-      await invoke('barcode:labels', { itemIds: withBarcodes.map((r) => r.id), copies: 1, showPrice: true })
-      toast.success(`Label sheet created for ${withBarcodes.length} item(s).`)
-    } catch (err) {
-      // A cancelled save dialog is a normal outcome, not a failure worth shouting about.
-      if (err instanceof ApiError && err.code === 'VALIDATION' && /cancel/i.test(err.message)) return
-      toast.error(err instanceof ApiError ? err.message : 'Could not create labels.')
-    } finally {
-      setBarcodeBusy(false)
-    }
+    setLabelSelection(preselect ?? [])
+    setLabelOpen(true)
   }
 
   const load = useCallback(async () => {
@@ -286,7 +279,7 @@ export function ItemsPage(): JSX.Element {
               <Button variant="outline" onClick={() => void assignBarcodes()} disabled={barcodeBusy}>
                 {barcodeBusy ? <Loader2 className="animate-spin" /> : <ScanLine />} Generate barcodes
               </Button>
-              <Button variant="outline" onClick={() => void printLabels()} disabled={barcodeBusy}>
+              <Button variant="outline" onClick={() => openLabels()} disabled={barcodeBusy}>
                 <Printer /> Print labels
               </Button>
               <Button onClick={openCreate}>
@@ -368,6 +361,17 @@ export function ItemsPage(): JSX.Element {
                         >
                           <Pencil className="size-4" />
                         </Button>
+                        {canManage && r.barcode && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Print labels for this item"
+                            aria-label={`Print labels for ${r.name}`}
+                            onClick={() => openLabels([r.id])}
+                          >
+                            <Printer className="size-4" />
+                          </Button>
+                        )}
                         {canManage && (
                           <Button
                             variant="ghost"
@@ -492,6 +496,21 @@ export function ItemsPage(): JSX.Element {
           </label>
         </div>
       </Dialog>
+
+      <LabelPrintDialog
+        open={labelOpen}
+        onClose={() => setLabelOpen(false)}
+        items={rows.map((r) => ({
+          id: r.id,
+          sku: r.sku,
+          name: r.name,
+          barcode: r.barcode,
+          sellingPrice: r.sellingPrice,
+          currentStock: r.currentStock
+        }))}
+        initialSelection={labelSelection}
+        canPrint={canManage}
+      />
     </div>
   )
 }
