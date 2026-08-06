@@ -113,10 +113,15 @@ interface Props {
   items: LabelItem[]
   /** Items ticked when the dialog opens, e.g. the row the user clicked. */
   initialSelection?: string[]
+  /**
+   * Items AND quantities to start with, e.g. everything just received on a
+   * goods-received note, one sticker per piece.
+   */
+  initialLines?: { itemId: string; copies: number }[]
   canPrint: boolean
 }
 
-export function LabelPrintDialog({ open, onClose, items, initialSelection, canPrint }: Props): JSX.Element {
+export function LabelPrintDialog({ open, onClose, items, initialSelection, initialLines, canPrint }: Props): JSX.Element {
   const [search, setSearch] = useState('')
   const [qty, setQty] = useState<Record<string, number>>({})
   const [sheet, setSheet] = useState<LabelSheet>(DEFAULT_SHEET)
@@ -173,8 +178,9 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, canPr
     })()
     const init: Record<string, number> = {}
     for (const id of initialSelection ?? []) init[id] = 1
+    for (const l of initialLines ?? []) init[l.itemId] = l.copies
     setQty(init)
-  }, [open, initialSelection])
+  }, [open, initialSelection, initialLines])
 
   function applyPreset(id: string): void {
     setPresetId(id)

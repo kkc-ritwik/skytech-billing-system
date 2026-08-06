@@ -23,6 +23,15 @@ export const payments = sqliteTable(
       .references(() => parties.id),
     amount: integer('amount').notNull(), // paise
     allocatedAmount: integer('allocated_amount').notNull().default(0),
+    /**
+     * Cash discount the party allowed for settling now, in paise.
+     *
+     * The money that changed hands is `amount`; the bill is settled for
+     * `amount + cashDiscount`. Kept separately so the books show what was
+     * actually paid and what was written off, rather than pretending the
+     * larger figure was received.
+     */
+    cashDiscount: integer('cash_discount').notNull().default(0),
     paidAt: integer('paid_at', { mode: 'timestamp_ms' }).notNull(),
     mode: text('mode').notNull(), // upi | bank_transfer | cash | cheque | card | other
     referenceNo: text('reference_no'), // UTR / cheque no / txn id

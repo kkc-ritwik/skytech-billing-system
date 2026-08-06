@@ -227,6 +227,8 @@ export const paymentInputSchema = z.object({
   referenceNo: optionalText,
   bankAccount: optionalText,
   notes: optionalText,
+  /** Discount allowed for settling now. Settles amount + this against the bill. */
+  cashDiscount: z.number().int().min(0).max(MAX_MONEY_PAISE).default(0),
   allocations: z.array(paymentAllocationSchema).default([])
 })
 export type PaymentInput = z.infer<typeof paymentInputSchema>

@@ -1,0 +1,1 @@
+ALTER TABLE `payments` ADD `cash_discount` integer DEFAULT 0 NOT NULL;

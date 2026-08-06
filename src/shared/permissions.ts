@@ -47,13 +47,19 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: PERMISSIONS.filter((p) => p !== 'license:manage') as Permission[],
   // Manager: operate + view financial reports + approve, but no destructive
   // settings/user/backup control.
+  //
+  // Amending or deleting a document that is already raised is deliberately NOT
+  // here. A bill or a goods-received note that has been saved has already moved
+  // stock and money; rewriting one after the fact is the shop owner's call, not
+  // a manager's. Managers raise as many documents as they like — they simply
+  // cannot go back and change yesterday's.
   manager: [
     'dashboard:view',
     'items:view', 'items:manage',
     'parties:view', 'parties:manage',
     'inventory:view', 'inventory:adjust',
-    'purchase:view', 'purchase:create', 'purchase:edit', 'purchase:approve',
-    'sales:view', 'sales:create', 'sales:edit', 'sales:approve',
+    'purchase:view', 'purchase:create', 'purchase:approve',
+    'sales:view', 'sales:create', 'sales:approve',
     'payments:view', 'payments:create',
     'reports:view', 'reports:financial',
     'settings:view',

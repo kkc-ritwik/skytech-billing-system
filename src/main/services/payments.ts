@@ -42,8 +42,13 @@ async function applyToPurchase(tx: DbOrTx, documentId: string, delta: number): P
 export async function recordPayment(input: PaymentInput, user: AuthUser): Promise<{ id: string; number: string }> {
   const d = paymentInputSchema.parse(input)
   const allocated = d.allocations.reduce((a, x) => a + x.amount, 0)
-  if (allocated > d.amount) {
-    throw Object.assign(new Error('Allocated amount exceeds the payment amount.'), { code: 'VALIDATION' })
+  // A cash discount settles more of the bill than the cash that moved, so the
+  // allocation may exceed the payment by exactly the discount allowed.
+  if (allocated > d.amount + d.cashDiscount) {
+    throw Object.assign(
+      new Error('Allocated amount exceeds the payment plus the cash discount.'),
+      { code: 'VALIDATION' }
+    )
   }
   const paidAt = new Date(d.paidAt)
 
@@ -57,6 +62,7 @@ export async function recordPayment(input: PaymentInput, user: AuthUser): Promis
         partyId: d.partyId,
         amount: d.amount,
         allocatedAmount: allocated,
+        cashDiscount: d.cashDiscount,
         paidAt,
         mode: d.mode,
         referenceNo: d.referenceNo ?? null,

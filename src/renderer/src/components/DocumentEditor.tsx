@@ -15,8 +15,20 @@ interface PartyOpt { id: string; name: string; balance?: number; creditLimit?: n
 interface ItemOpt {
   id: string; name: string; sku: string; hsnCode: string | null
   sellingPrice: number; purchasePrice: number; marginBps: number; taxRateBps: number | null
+  barcode?: string | null
   cutLength?: number; packing?: string | null
 }
+/**
+ * What a saved purchase reports back, so the list screen can offer to print
+ * stickers for exactly the goods that were just received.
+ */
+export interface SavedPurchase {
+  id: string
+  number: string
+  docType: string
+  labelLines: { itemId: string; copies: number }[]
+}
+
 interface LineRow {
   itemId: string
   batchNo: string
@@ -50,7 +62,7 @@ export function DocumentEditor({
   editId?: string
   open: boolean
   onClose: () => void
-  onSaved: () => void
+  onSaved: (saved?: SavedPurchase) => void
 }): JSX.Element {
   const isSales = mode === 'sales'
   const [parties, setParties] = useState<PartyOpt[]>([])
@@ -80,6 +92,10 @@ export function DocumentEditor({
   const [schemeAmountInput, setSchemeAmountInput] = useState('')
   /** Purchase only: batch / lot number for the whole consignment. */
   const [batchNo, setBatchNo] = useState('')
+  /** Purchase only: settle the vendor's bill as it is entered. */
+  const [pay, setPay] = useState({ amount: '', mode: 'cash', reference: '', discountPct: '', discountAmount: '' })
+  /** Purchase only: barcode/SKU typed or scanned to add a line. */
+  const [scan, setScan] = useState('')
   const [dispatch, setDispatch] = useState({
     challanNo: '', orderNo: '', agentName: '', consigneeName: '', consigneeGstin: '',
     lrNo: '', lrDate: '', transportName: '', transportStation: '', caseNo: '',
@@ -95,6 +111,8 @@ export function DocumentEditor({
     setReference('')
     setSchemeAmountInput('')
     setBatchNo('')
+    setPay({ amount: '', mode: 'cash', reference: '', discountPct: '', discountAmount: '' })
+    setScan('')
     setIsInterState(false)
     setInterStateTouched(false)
     setNotes('')
@@ -264,6 +282,47 @@ export function DocumentEditor({
     return (Math.round(r * (1 + m / 100) * 100) / 100).toFixed(2)
   }
 
+  /**
+   * Add a scanned design to the purchase, or bump the quantity if it is already
+   * on the bill — the same behaviour as the counter, so goods-in can be done
+   * with the scanner rather than the keyboard.
+   */
+  async function addByScan(): Promise<void> {
+    const code = scan.trim()
+    if (!code) return
+    setScan('')
+    const hit =
+      items.find((x) => (x.barcode ?? '') === code) ??
+      items.find((x) => x.sku.toLowerCase() === code.toLowerCase())
+    if (!hit) {
+      toast.error(`No item found for "${code}".`)
+      return
+    }
+    setLines((ls) => {
+      const at = ls.findIndex((l) => l.itemId === hit.id)
+      if (at >= 0) {
+        return ls.map((l, i) =>
+          i === at ? { ...l, quantity: String((Number(l.quantity || 0) || 0) + 1) } : l
+        )
+      }
+      // Fill the first blank row if there is one, else append.
+      const blank = ls.findIndex((l) => !l.itemId && !l.description.trim())
+      const margin = hit.marginBps ? String(hit.marginBps / 100) : ''
+      const row: LineRow = {
+        ...emptyLine,
+        itemId: hit.id,
+        description: hit.name,
+        hsnCode: hit.hsnCode ?? '',
+        quantity: '1',
+        unitPrice: String(toRupees(hit.purchasePrice)),
+        marginPct: margin,
+        sellingPrice: hit.sellingPrice ? String(toRupees(hit.sellingPrice)) : '',
+        taxRateBps: hit.taxRateBps ?? 0
+      }
+      return blank >= 0 ? ls.map((l, i) => (i === blank ? row : l)) : [...ls, row]
+    })
+  }
+
   function setMargin(i: number, marginPct: string): void {
     setLines((ls) =>
       ls.map((l, idx) =>
@@ -297,7 +356,21 @@ export function DocumentEditor({
     })
   }
 
+  /**
+   * Cash discount in paise, from whichever box the buyer used.
+   *
+   * Vendors offer it either way — "2% for paying today" or "knock off 500" —
+   * so both boxes exist and the percentage is taken on the bill total.
+   */
+  const payDiscountPaise = (() => {
+    const pct = Number(pay.discountPct || 0)
+    const flat = toPaise(pay.discountAmount || '0')
+    const fromPct = pct > 0 ? Math.round((totals.grandTotal * pct) / 100) : 0
+    return Math.max(0, Math.min(totals.grandTotal, fromPct + flat))
+  })()
+
   async function save(): Promise<void> {
+    let savedPurchase: SavedPurchase | null = null
     setSaving(true)
     try {
       const baseLines = lines.map((l) => ({
@@ -379,10 +452,52 @@ export function DocumentEditor({
             sellingPrice: toPaise(l.sellingPrice || '0')
           }))
         }
-        await invoke('purchases:save', payload)
+        const saved = await invoke<{ id: string; number: string }>('purchases:save', payload)
+
+        // Settle the vendor's bill from the same screen. A failure here must
+        // not lose the purchase that already saved, so it is reported on its
+        // own rather than rolling the whole thing back.
+        const payAmount = toPaise(pay.amount || '0')
+        const cashDiscount = payDiscountPaise
+        if (payAmount > 0) {
+          try {
+            await invoke('payments:record', {
+              direction: 'outbound',
+              partyId,
+              amount: payAmount,
+              paidAt: issueMs,
+              mode: pay.mode,
+              referenceNo: pay.reference || null,
+              bankAccount: null,
+              notes: null,
+              cashDiscount,
+              allocations: [
+                {
+                  refType: 'purchase',
+                  documentId: saved.id,
+                  amount: Math.min(payAmount + cashDiscount, totals.grandTotal)
+                }
+              ]
+            })
+          } catch (err) {
+            toast.error(
+              `Purchase ${saved.number} saved, but the payment was not recorded: ` +
+                (err instanceof ApiError ? err.message : 'unknown error')
+            )
+          }
+        }
+        savedPurchase = {
+          id: saved.id,
+          number: saved.number,
+          docType,
+          // One sticker per piece received, which is what goods-in needs.
+          labelLines: lines
+            .filter((l) => l.itemId && Number(l.quantity || 0) > 0)
+            .map((l) => ({ itemId: l.itemId, copies: Math.max(1, Math.round(Number(l.quantity))) }))
+        }
       }
       toast.success('Saved.')
-      onSaved()
+      onSaved(savedPurchase ?? undefined)
       onClose()
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Save failed.')
@@ -460,6 +575,26 @@ export function DocumentEditor({
         </div>
       )}
 
+      {!isSales && (
+        <div className="mt-4 max-w-md space-y-1.5">
+          <Label>Scan barcode</Label>
+          <Input
+            value={scan}
+            onChange={(e) => setScan(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== 'Tab') return
+              e.preventDefault()
+              void addByScan()
+            }}
+            placeholder="Scan or type a barcode / SKU, then press Enter"
+            className="font-mono"
+          />
+          <p className="text-xs text-muted-foreground">
+            Scanning the same design again adds one more to its quantity.
+          </p>
+        </div>
+      )}
+
       <div className="mt-4 rounded-lg border">
         <table className="w-full text-sm">
           <thead>
@@ -481,10 +616,19 @@ export function DocumentEditor({
             {lines.map((l, i) => (
               <tr key={i} className="border-b last:border-0">
                 <td className="p-1.5">
-                  <Select value={l.itemId} onChange={(e) => onPickItem(i, e.target.value)} className="mb-1 h-8 text-xs">
-                    <option value="">— custom —</option>
-                    {items.map((it) => <option key={it.id} value={it.id}>{it.name} ({it.sku})</option>)}
-                  </Select>
+                  {isSales ? (
+                    <Select value={l.itemId} onChange={(e) => onPickItem(i, e.target.value)} className="mb-1 h-8 text-xs">
+                      <option value="">— custom —</option>
+                      {items.map((it) => <option key={it.id} value={it.id}>{it.name} ({it.sku})</option>)}
+                    </Select>
+                  ) : (
+                    <ItemSearch
+                      items={items}
+                      value={l.itemId}
+                      onPick={(id) => onPickItem(i, id)}
+                      onClear={() => setLine(i, { itemId: '' })}
+                    />
+                  )}
                   <Input value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} placeholder="Description" className="h-8" />
                   <div className="mt-1 flex gap-1">
                     <Input value={l.batchNo} onChange={(e) => setLine(i, { batchNo: e.target.value })} placeholder="Batch (optional)" className="h-7 text-xs" />
@@ -569,7 +713,56 @@ export function DocumentEditor({
 
         {!isSales && (
           <div className="grid w-80 grid-cols-2 gap-2">
-            <div className="col-span-2 text-xs font-medium uppercase text-muted-foreground">
+            <div className="col-span-2 mt-2 text-xs font-medium uppercase text-muted-foreground">
+              Pay the vendor now (optional)
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Amount paid (₹)</Label>
+              <Input
+                type="number" step="0.01" placeholder="0.00"
+                value={pay.amount} onChange={(e) => setPay((v) => ({ ...v, amount: e.target.value }))}
+                className="h-9 text-right"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Mode</Label>
+              <Select value={pay.mode} onChange={(e) => setPay((v) => ({ ...v, mode: e.target.value }))} className="h-9">
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="cheque">Cheque</option>
+                <option value="card">Card</option>
+                <option value="other">Other</option>
+              </Select>
+            </div>
+            <div className="col-span-2 space-y-1">
+              <Label className="text-xs">Reference / UTR / Cheque no</Label>
+              <Input value={pay.reference} onChange={(e) => setPay((v) => ({ ...v, reference: e.target.value }))} className="h-9" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Cash discount %</Label>
+              <Input
+                type="number" step="0.01" placeholder="0"
+                value={pay.discountPct} onChange={(e) => setPay((v) => ({ ...v, discountPct: e.target.value }))}
+                className="h-9 text-right"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">or amount (₹)</Label>
+              <Input
+                type="number" step="0.01" placeholder="0.00"
+                value={pay.discountAmount} onChange={(e) => setPay((v) => ({ ...v, discountAmount: e.target.value }))}
+                className="h-9 text-right"
+              />
+            </div>
+            {payDiscountPaise > 0 && (
+              <p className="col-span-2 text-xs text-muted-foreground">
+                Settles {formatINR(toPaise(pay.amount || '0') + payDiscountPaise)} of the bill for{' '}
+                {formatINR(toPaise(pay.amount || '0'))} paid — {formatINR(payDiscountPaise)} written off as cash discount.
+              </p>
+            )}
+
+            <div className="col-span-2 mt-3 text-xs font-medium uppercase text-muted-foreground">
               Discount on the whole bill (before GST)
             </div>
             <div className="space-y-1">
@@ -667,6 +860,96 @@ function Row({ label, value }: { label: string; value: string }): JSX.Element {
   return (
     <div className="flex justify-between text-muted-foreground">
       <span>{label}</span><span className="text-foreground">{value}</span>
+    </div>
+  )
+}
+
+/**
+ * Type-to-find item picker, used on the purchase form.
+ *
+ * A dropdown is fine with twenty designs and unusable with two thousand — a
+ * buyer knows the design name or the SKU and wants to type three letters, not
+ * scroll. Matches on name, SKU or barcode, and Enter takes the top hit so the
+ * whole line can be entered from the keyboard.
+ */
+function ItemSearch({
+  items,
+  value,
+  onPick,
+  onClear
+}: {
+  items: ItemOpt[]
+  value: string
+  onPick: (id: string) => void
+  onClear: () => void
+}): JSX.Element {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const picked = items.find((x) => x.id === value)
+
+  const matches = (() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return items.slice(0, 8)
+    return items
+      .filter(
+        (x) =>
+          x.name.toLowerCase().includes(q) ||
+          x.sku.toLowerCase().includes(q) ||
+          (x.barcode ?? '').toLowerCase().includes(q)
+      )
+      .slice(0, 8)
+  })()
+
+  if (picked) {
+    return (
+      <div className="mb-1 flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs">
+        <span className="truncate font-medium">{picked.name}</span>
+        <span className="shrink-0 font-mono text-muted-foreground">{picked.sku}</span>
+        <button
+          type="button"
+          className="ml-auto shrink-0 rounded px-1 text-muted-foreground hover:text-foreground"
+          title="Choose a different item"
+          onClick={() => { onClear(); setQuery(''); setOpen(true) }}
+        >
+          ✕
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative mb-1">
+      <Input
+        className="h-8 text-xs"
+        placeholder="Search item name, SKU or barcode"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && matches[0]) {
+            e.preventDefault()
+            onPick(matches[0].id)
+            setOpen(false)
+          }
+        }}
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-popover shadow-md">
+          {matches.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onPick(it.id); setOpen(false) }}
+            >
+              <span className="truncate font-medium">{it.name}</span>
+              <span className="ml-auto shrink-0 font-mono text-muted-foreground">{it.sku}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

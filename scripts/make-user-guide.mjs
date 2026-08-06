@@ -570,8 +570,12 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
 
   <h3>Step 4 — print</h3>
   <ol class="steps">
-    <li>Click <b>Print labels</b> and choose where to save the PDF; it opens automatically.</li>
-    <li>Print it, then stick one label on each piece or on the fold of each pile.</li>
+    <li>Choose your <b>printer</b> from the box at the bottom — your usual one is
+      already selected. It is remembered separately for labels, so your barcode
+      printer stays chosen even when reports go to a different printer.</li>
+    <li>Click <b>Print</b> and the stickers come straight out. <b>Save PDF</b> is
+      still there if you want a file instead.</li>
+    <li>Stick one label on each piece, or on the fold of each pile.</li>
   </ol>
   <p>Your sheet measurements are remembered, so the next print run needs only the
   items and quantities.</p>
@@ -618,15 +622,62 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
   ${img('purchases-new-grn', 'Recording goods in. Pick the vendor, then add a line per design.')}
   <ol class="steps">
     <li><b>Purchases</b> → <b>Goods Received (GRN)</b> tab → <b>New</b>.</li>
-    <li>Choose the <b>Vendor</b>.</li>
-    <li>Enter their bill number under <b>Supplier invoice no</b>.</li>
-    <li>On each line pick the design, type <b>Qty</b> (pieces) and the <b>Rate</b> you paid.</li>
-    <li>Click <b>Add line</b> for the next design.</li>
+    <li>Choose the <b>Vendor</b> and enter their bill number under <b>Supplier invoice no</b>.</li>
+    <li>Put the consignment's <b>Batch / Lot no</b> at the top. Every line takes it
+      automatically, so it is typed once, not per design.</li>
+    <li>Add the designs, either way:
+      <ul>
+        <li><b>Scan barcode</b> — scan or type a code and press Enter. Scanning the
+          same design again adds one more to its quantity.</li>
+        <li><b>Search</b> on the line — type part of the design name or SKU and pick it.
+          There is no long dropdown to scroll.</li>
+      </ul></li>
+    <li>Type <b>Qty</b> (pieces) and the <b>Rate</b> the vendor charged.</li>
+    <li>Type your <b>Margin%</b>. The <b>MRP</b> box fills in by itself — rate 4560
+      at 45% gives 6612 — and you can type over it to round it to 6615 or 6620.
+      Whatever is left there is saved as that design's selling price and is what
+      prints on the barcode sticker.</li>
     <li>Tick <b>Inter-state supply</b> if the mill is in another state.</li>
     <li><b>Save</b>. Stock goes up immediately.</li>
   </ol>
+
+  <div class="tip"><b>Buying the same design again</b>
+    Pick it and the screen reopens at last time's rate, margin and MRP. Change
+    only what has actually changed.</div>
+
+  <h3>Vendor discounts</h3>
+  <p>Vendors give discounts in different ways, so all of them are here:</p>
+  <table>
+    <tr><th>Where</th><th>What it does</th></tr>
+    <tr><td><b>Disc</b> on a line</td><td>Discount on that one design.</td></tr>
+    <tr><td><b>Discount on the whole bill</b></td><td>Percentage or a flat rupee figure, or both.
+      <b>GST is charged on what is left after it</b>, which is how the vendor's own bill works.</td></tr>
+    <tr><td><b>Cash discount</b> under payment</td><td>Allowed for settling now — see below.</td></tr>
+  </table>
+
+  <h3>Paying the vendor from the same screen</h3>
+  <ol class="steps">
+    <li>Fill <b>Amount paid</b> and pick the <b>Mode</b> — Cash, UPI, Bank transfer, Cheque or Card.</li>
+    <li>Put the UTR or cheque number in <b>Reference</b>.</li>
+    <li>If the vendor allowed a <b>cash discount</b> for paying now, type it as a
+      percentage or an amount. The bill is settled for what you paid <i>plus</i> the
+      discount, so it shows as cleared while your books still record only the money
+      that actually left.</li>
+    <li><b>Save</b> — the purchase and the payment are recorded together.</li>
+  </ol>
+
+  <h3>Printing the stickers straight away</h3>
+  <p>After saving a GRN the software asks whether to print barcode labels for what
+  just arrived. Say yes and the label screen opens with every design already
+  ticked and <b>one sticker per piece received</b>. Change any quantity if you
+  want, choose the printer, and print. See section 12 for the label sizes.</p>
+
   <div class="tip"><b>Check it worked</b>
     Open <b>Inventory</b> — the pieces should now appear against each design.</div>
+  <div class="warn"><b>Only the Admin can change a saved purchase</b>
+    Once a goods-received note is saved it has already moved stock and money.
+    Managers and counter staff can raise as many as they like but cannot go back
+    and rewrite or delete one. The same applies to sales bills.</div>
 </div>
 
 <div class="section">

@@ -13,7 +13,8 @@ import { Input } from '@renderer/components/ui/input'
 import { Badge } from '@renderer/components/ui/badge'
 import { Card } from '@renderer/components/ui/card'
 import { Table, THead, TBody, TR, TH, TD } from '@renderer/components/ui/table'
-import { DocumentEditor } from './DocumentEditor'
+import { DocumentEditor, type SavedPurchase } from './DocumentEditor'
+import { LabelPrintDialog, type LabelItem } from './LabelPrintDialog'
 
 interface DocRow {
   id: string
@@ -62,6 +63,40 @@ export function DocumentListPage({
   const [rows, setRows] = useState<DocRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editorOpen, setEditorOpen] = useState(false)
+  const [labelOpen, setLabelOpen] = useState(false)
+  const [labelItems, setLabelItems] = useState<LabelItem[]>([])
+  const [labelLines, setLabelLines] = useState<{ itemId: string; copies: number }[]>([])
+
+  /**
+   * After goods are received, offer to print the stickers for them.
+   *
+   * This is the moment a shop actually wants labels: the delivery is open on
+   * the counter and each piece needs tagging before it goes on the shelf. The
+   * quantities come straight off the goods-received note, so nothing is counted
+   * twice. Only for a GRN — an order has not brought anything in yet.
+   */
+  async function offerLabels(saved?: SavedPurchase): Promise<void> {
+    if (!saved || saved.docType !== 'grn' || saved.labelLines.length === 0) return
+    const total = saved.labelLines.reduce((a, l) => a + l.copies, 0)
+    const ok = await confirmAction({
+      title: 'Print barcode labels for these goods?',
+      message:
+        `${saved.number} received ${total} piece${total === 1 ? '' : 's'} across ` +
+        `${saved.labelLines.length} design${saved.labelLines.length === 1 ? '' : 's'}. ` +
+        'Print a sticker for each one now?',
+      confirmLabel: 'Print labels',
+      cancelLabel: 'Not now'
+    })
+    if (!ok) return
+    try {
+      const all = await invoke<LabelItem[]>('items:list', {})
+      setLabelItems(all)
+      setLabelLines(saved.labelLines)
+      setLabelOpen(true)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not load the items for labelling.')
+    }
+  }
   const [editId, setEditId] = useState<string | undefined>()
   const [convertMenu, setConvertMenu] = useState<string | null>(null)
   const [gstMenu, setGstMenu] = useState<string | null>(null)
@@ -263,7 +298,15 @@ export function DocumentListPage({
         editId={editId}
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
-        onSaved={() => void load()}
+        onSaved={(saved) => { void load(); void offerLabels(saved) }}
+      />
+
+      <LabelPrintDialog
+        open={labelOpen}
+        onClose={() => setLabelOpen(false)}
+        items={labelItems}
+        initialLines={labelLines}
+        canPrint
       />
     </div>
   )

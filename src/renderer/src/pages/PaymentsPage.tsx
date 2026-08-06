@@ -136,6 +136,7 @@ export function PaymentsPage(): JSX.Element {
         referenceNo: reference || null,
         bankAccount: null,
         notes: null,
+        cashDiscount: 0,
         allocations
       }
       await invoke('payments:record', payload)

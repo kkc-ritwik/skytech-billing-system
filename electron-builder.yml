@@ -31,6 +31,13 @@ files:
   - '!release/**'
   - '!{eslint.config.mjs,postcss.config.js,tailwind.config.js}'
   - '!{QA-REPORT.md,TEST-GUIDE.md}'
+  # Working folders that exist only on the build machine.
+  - '!client-screenshots'
+  - '!client-screenshots/**'
+  - '!guide-shots'
+  - '!guide-shots/**'
+  - '!scratchpad'
+  - '!scratchpad/**'
 
 # libSQL ships prebuilt N-API binaries (ABI-stable) — no native rebuild needed.
 npmRebuild: false
