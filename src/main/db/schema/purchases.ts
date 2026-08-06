@@ -39,6 +39,17 @@ export const purchaseDocuments = sqliteTable(
     extraChargesLabel: text('extra_charges_label'),
     extraCharges: integer('extra_charges').notNull().default(0),
     extraDiscount: integer('extra_discount').notNull().default(0),
+
+    // ---- Bill-level discount from the vendor, applied BEFORE tax ----
+    // Vendors quote this either as a percentage off the bill or as a flat
+    // rupee figure, and GST is charged on what is left after it. Both forms are
+    // kept: the percentage as entered, and the rupee amount it worked out to.
+    schemePct: integer('scheme_pct').notNull().default(0), // basis points
+    schemeAmount: integer('scheme_amount').notNull().default(0), // paise
+
+    /** Batch / lot number covering the whole consignment. */
+    batchNo: text('batch_no'),
+
     roundOff: integer('round_off').notNull().default(0),
     grandTotal: integer('grand_total').notNull().default(0),
 

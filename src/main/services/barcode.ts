@@ -214,20 +214,26 @@ export interface LabelRequest {
   sheet: LabelSheet
 }
 
-/** A4, 65 address labels — the stock most Indian stationers carry. */
+/**
+ * Thermal roll, 50 x 25 mm, one label across — what the shop actually runs on
+ * its label printer, so it is what a fresh install starts with.
+ *
+ * SKU is off by default: on a sticker this small the shop wants the design name
+ * on top and the price along the bottom, and a second code line only crowds it.
+ */
 export const DEFAULT_LABEL_SHEET: LabelSheet = {
-  pageWidthMm: 210,
-  pageHeightMm: 297,
-  marginTopMm: 8,
-  marginRightMm: 5,
-  marginBottomMm: 8,
-  marginLeftMm: 5,
-  labelWidthMm: 38.1,
-  labelHeightMm: 21.2,
+  pageWidthMm: 50,
+  pageHeightMm: 25,
+  marginTopMm: 0,
+  marginRightMm: 0,
+  marginBottomMm: 0,
+  marginLeftMm: 0,
+  labelWidthMm: 50,
+  labelHeightMm: 25,
   columnGapMm: 0,
   rowGapMm: 0,
   showName: true,
-  showSku: true,
+  showSku: false,
   showPrice: true,
   skipLabels: 0
 }
@@ -341,12 +347,27 @@ export async function renderLabelSheetHtml(req: LabelRequest): Promise<string> {
   }
 
   // Geometry, in mm, inside one label.
-  const padMm = 1
-  const innerW = sheet.labelWidthMm - padMm * 2
-  const innerH = sheet.labelHeightMm - padMm * 2
-  const nameH = sheet.showName ? Math.min(4, innerH * 0.22) : 0
-  const footH = sheet.showSku || sheet.showPrice ? Math.min(3.2, innerH * 0.18) : 0
-  const barBandH = Math.max(2, innerH - nameH - footH)
+  // Geometry inside one sticker, tuned against real printed output.
+  //
+  // Side padding is deliberately wider than top/bottom: with a tight side
+  // margin the price ran off the right edge of a 50 x 25 mm sticker and came
+  // out clipped. The top gets its own breathing space too, because the name
+  // was printing hard against the edge and losing its ascenders.
+  const padTopMm = 1.3
+  const padSideMm = 1.8
+  const padBottomMm = 1.1
+  const gapMm = 0.4
+
+  const innerW = sheet.labelWidthMm - padSideMm * 2
+  const innerH = sheet.labelHeightMm - padTopMm - padBottomMm
+  const nameH = sheet.showName ? Math.min(3.6, innerH * 0.2) : 0
+  const footH = sheet.showSku || sheet.showPrice ? Math.min(4.2, innerH * 0.22) : 0
+  const gaps = (nameH > 0 ? gapMm : 0) + (footH > 0 ? gapMm : 0)
+
+  // Cap the barcode band rather than letting it fill whatever is left. Taller
+  // bars do not scan any better, and the extra height was crowding the name and
+  // the price on a small sticker.
+  const barBandH = Math.max(2, Math.min(innerH - nameH - footH - gaps, innerH * 0.55))
 
   /**
    * The SVG carries a viewBox, so CSS decides its final size; only the aspect
@@ -375,9 +396,12 @@ export async function renderLabelSheetHtml(req: LabelRequest): Promise<string> {
   for (const line of lines) {
     const r = byId.get(line.itemId)!
     const price = `&#8377;${(r.sellingPrice / 100).toFixed(2)}`
+    // The price is the MRP and sits centred along the bottom, which is where a
+    // customer looks for it. SKU, when switched on, rides beside it rather than
+    // being pinned to the left corner where it used to collide with the price.
     const foot =
       sheet.showSku || sheet.showPrice
-        ? `<div class="ft">${sheet.showSku ? `<span class="sku">${esc(r.sku)}</span>` : '<span></span>'}${
+        ? `<div class="ft">${sheet.showSku ? `<span class="sku">${esc(r.sku)}</span>` : ''}${
             sheet.showPrice ? `<span class="pr">${price}</span>` : ''
           }</div>`
         : ''
@@ -414,18 +438,21 @@ export async function renderLabelSheetHtml(req: LabelRequest): Promise<string> {
     }
     .sheet:last-child { page-break-after:auto; break-after:auto; }
     .label {
-      width:${n(sheet.labelWidthMm)}mm; height:${n(sheet.labelHeightMm)}mm; padding:${n(padMm)}mm;
+      width:${n(sheet.labelWidthMm)}mm; height:${n(sheet.labelHeightMm)}mm;
+      padding:${n(padTopMm)}mm ${n(padSideMm)}mm ${n(padBottomMm)}mm;
       display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:${n(gapMm)}mm;
       overflow:hidden; page-break-inside:avoid; break-inside:avoid;
     }
     .label.blank { visibility:hidden; }
-    .nm { height:${n(nameH)}mm; line-height:${n(nameH)}mm; font-size:${n(nameH * 0.82)}mm; font-weight:600;
+    .nm { height:${n(nameH)}mm; line-height:${n(nameH)}mm; font-size:${n(nameH * 0.78)}mm; font-weight:600;
           text-align:center; width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
     .bc { width:${n(innerW)}mm; height:${n(barBandH)}mm; display:flex; align-items:center; justify-content:center; }
     .bc svg { width:100%; height:100%; display:block; }
-    .ft { height:${n(footH)}mm; line-height:${n(footH)}mm; font-size:${n(footH * 0.78)}mm;
-          display:flex; justify-content:space-between; align-items:center; width:100%; gap:1mm; }
-    .ft .sku { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .ft { height:${n(footH)}mm; line-height:${n(footH)}mm; font-size:${n(footH * 0.8)}mm;
+          display:flex; justify-content:center; align-items:center; width:100%; gap:2mm;
+          overflow:hidden; }
+    .ft .sku { font-size:${n(footH * 0.62)}mm; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
     .ft .pr { font-weight:700; white-space:nowrap; }
   </style></head><body>${pages.join('')}</body></html>`
 }

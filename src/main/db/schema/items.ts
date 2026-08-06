@@ -47,6 +47,14 @@ export const items = sqliteTable(
     taxRateId: text('tax_rate_id').references(() => taxRates.id),
     // Prices in paise
     purchasePrice: integer('purchase_price').notNull().default(0),
+    /**
+     * Margin over the purchase rate, in basis points (4500 = 45%).
+     *
+     * Kept on the item so that the next time it is bought, the purchase screen
+     * can offer the same margin it was priced at last time instead of the buyer
+     * recalculating it from memory.
+     */
+    marginBps: integer('margin_bps').notNull().default(0),
     sellingPrice: integer('selling_price').notNull().default(0),
     // true => sellingPrice already includes tax (MRP-style)
     sellingPriceIsInclusive: integer('selling_price_is_inclusive', { mode: 'boolean' })

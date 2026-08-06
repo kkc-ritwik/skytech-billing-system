@@ -105,7 +105,19 @@ const ALLOWED_SETTING_KEYS = new Set([
   'defaultSchemeLabel',
   'defaultSchemePct',
   'defaultCutLength',
-  'defaultTransportName'
+  'defaultTransportName',
+  // Last label sheet used in the barcode label designer, so the millimetre
+  // figures are typed once rather than on every print run.
+  'labelSheet',
+  // Chosen printer per purpose. A shop runs a thermal label printer, a receipt
+  // printer and an A4 printer, and each job must go to the right one.
+  'printer.labels',
+  'printer.receipt',
+  'printer.report',
+  // Free text printed at the bottom of a retail receipt, a few short lines.
+  'receiptFooterLines',
+  // Default margin % used to derive selling price from purchase rate.
+  'defaultMarginPct'
 ])
 
 export async function setSettings(patch: Record<string, unknown>, user: AuthUser): Promise<void> {

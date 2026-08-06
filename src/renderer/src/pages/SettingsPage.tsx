@@ -37,7 +37,7 @@ export function SettingsPage(): JSX.Element {
     defaultTransportName: string
   }>({
     paperSize: 'A4',
-    preventNegativeStock: false,
+    preventNegativeStock: true,
     invoiceTemplate: 'standard',
     invoiceInvocation: '',
     defaultSchemeLabel: 'DISCOUNT',
@@ -66,7 +66,7 @@ export function SettingsPage(): JSX.Element {
         }
         setPrefs({
           paperSize: s?.paperSize ?? 'A4',
-          preventNegativeStock: !!s?.preventNegativeStock,
+          preventNegativeStock: s?.preventNegativeStock !== false,
           invoiceTemplate: (s?.invoiceTemplate as string) ?? 'standard',
           invoiceInvocation: (s?.invoiceInvocation as string) ?? '',
           defaultSchemeLabel: (s?.defaultSchemeLabel as string) ?? 'DISCOUNT',

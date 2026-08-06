@@ -13,6 +13,7 @@ import { getSalesDoc } from './sales'
 import { getPurchaseDoc } from './purchases'
 import { renderDocumentHtml, renderStatementHtml, renderThermalHtml, type PdfModel, type PdfLine } from './pdf-template'
 import { renderTextileInvoiceHtml, type TextileModel } from './pdf-textile'
+import { printHtml } from './printing'
 import { renderLabelSheetHtml, type LabelRequest } from './barcode'
 import { partyLedger } from './ledger'
 import type { AuthUser } from '@shared/ipc'
@@ -265,6 +266,39 @@ export async function exportDocumentPdf(
 }
 
 /** Generate a sheet of barcode labels (A4, 65-up) and open it for printing. */
+/**
+ * Send a run of barcode labels straight to a printer.
+ *
+ * The page size is handed to the printer in millimetres so a 50 x 25 mm roll
+ * comes out at 50 x 25 mm, not scaled onto A4.
+ */
+export async function printBarcodeLabels(
+  req: LabelRequest,
+  user: AuthUser,
+  opts: { deviceName?: string; copies?: number } = {}
+): Promise<{ printed: true }> {
+  const html = await renderLabelSheetHtml(req)
+  const res = await printHtml(html, {
+    deviceName: opts.deviceName,
+    copies: opts.copies,
+    pageSizeMm: { widthMm: req.sheet.pageWidthMm, heightMm: req.sheet.pageHeightMm },
+    silent: true
+  })
+  await audit({
+    userId: user.id,
+    username: user.username,
+    action: 'item.barcode.print',
+    entityType: 'item',
+    details: {
+      items: req.lines.length,
+      labels: req.lines.reduce((a, l) => a + l.copies, 0),
+      printer: opts.deviceName ?? '(default)',
+      labelMm: `${req.sheet.labelWidthMm}x${req.sheet.labelHeightMm}`
+    }
+  })
+  return res
+}
+
 export async function exportBarcodeLabels(req: LabelRequest, user: AuthUser): Promise<{ path: string }> {
   const html = await renderLabelSheetHtml(req)
   const buffer = await renderPdfBuffer(html, 'css')

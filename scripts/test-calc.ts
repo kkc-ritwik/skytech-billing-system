@@ -56,6 +56,46 @@ expect('extra charges recorded', docX.totals.extraCharges, toPaise(100))
 expect('extra discount recorded', docX.totals.extraDiscount, toPaise(50))
 expect('grand total with extras', docX.totals.grandTotal, toPaise(1230))
 
+// 5c) Pre-tax discount on the whole bill, as a percentage AND as a flat amount.
+// A vendor may quote either; GST must be charged on what is left AFTER it.
+const docPct = computeDocument(
+  [{ quantity: 1, unitPrice: toPaise(1000), taxRateBps: 500 }],
+  false,
+  { schemePct: 1000 } // 10%
+)
+expect('pre-tax % discount reduces taxable value', docPct.totals.taxableValue, toPaise(900))
+expect('tax charged after the % discount', docPct.totals.cgstTotal + docPct.totals.sgstTotal, toPaise(45))
+
+const docFlat = computeDocument(
+  [{ quantity: 1, unitPrice: toPaise(1000), taxRateBps: 500 }],
+  false,
+  { schemeAmount: toPaise(100) }
+)
+expect('pre-tax flat discount reduces taxable value', docFlat.totals.taxableValue, toPaise(900))
+expect('tax charged after the flat discount', docFlat.totals.cgstTotal + docFlat.totals.sgstTotal, toPaise(45))
+expect('flat discount recorded as scheme', docFlat.totals.schemeAmount, toPaise(100))
+
+const docBoth = computeDocument(
+  [{ quantity: 1, unitPrice: toPaise(1000), taxRateBps: 500 }],
+  false,
+  { schemePct: 1000, schemeAmount: toPaise(100) }
+)
+expect('percentage and flat discounts add up', docBoth.totals.schemeAmount, toPaise(200))
+expect('taxable value after both', docBoth.totals.taxableValue, toPaise(800))
+
+const docCap = computeDocument(
+  [{ quantity: 1, unitPrice: toPaise(1000), taxRateBps: 500 }],
+  false,
+  { schemeAmount: toPaise(5000) }
+)
+expect('a discount larger than the bill is capped', docCap.totals.schemeAmount, toPaise(1000))
+expect('capped discount cannot make the taxable value negative', docCap.totals.taxableValue, 0)
+
+// A document with no discount at all must be untouched by the new field.
+const docNone = computeDocument([{ quantity: 2, unitPrice: toPaise(1675), taxRateBps: 500 }], true)
+expect('no discount -> scheme is zero', docNone.totals.schemeAmount, 0)
+expect('no discount -> taxable value is the sub total', docNone.totals.taxableValue, docNone.totals.subTotal)
+
 // 6) Amount in words (Indian system)
 expect('words 0', amountInWordsINR(0), 'Zero Rupees Only')
 expect('words 125000', amountInWordsINR(toPaise(1250)), 'One Thousand Two Hundred Fifty Rupees Only')

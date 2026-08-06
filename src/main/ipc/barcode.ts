@@ -12,7 +12,8 @@ import {
   type PosContext
 } from '../services/barcode'
 import { labelRequestSchema, MAX_LABELS_PER_JOB } from '@shared/dto'
-import { exportBarcodeLabels } from '../services/pdf'
+import { exportBarcodeLabels, printBarcodeLabels } from '../services/pdf'
+import { listPrinters, type PrinterInfo } from '../services/printing'
 
 export function registerBarcodeRoutes(): void {
   // Company state code + shop defaults, needed wherever a document is raised.
@@ -52,6 +53,26 @@ export function registerBarcodeRoutes(): void {
     }
     return exportBarcodeLabels(req, ctx.user)
   })
+
+  /** Printers this machine can see, with the system default flagged. */
+  route<undefined, PrinterInfo[]>('print:listPrinters', 'dashboard:view', () => listPrinters())
+
+  /** Send labels straight to a printer instead of saving a PDF. */
+  route<LabelRequest & { deviceName?: string }, { printed: true }>(
+    'barcode:labelsPrint',
+    'items:manage',
+    async (p, ctx) => {
+      const req = parseLabelRequest(p)
+      const total = req.lines.reduce((a, l) => a + l.copies, 0)
+      if (total > MAX_LABELS_PER_JOB) {
+        throw new AppError(
+          `That is ${total.toLocaleString('en-IN')} labels in one go. Print at most ${MAX_LABELS_PER_JOB.toLocaleString('en-IN')} at a time.`,
+          'VALIDATION'
+        )
+      }
+      return printBarcodeLabels(req, ctx.user, { deviceName: p.deviceName })
+    }
+  )
 
   /**
    * The same HTML the PDF is built from, for the on-screen preview. Read-only,

@@ -57,6 +57,7 @@ export async function listItems(filter?: { search?: string; activeOnly?: boolean
       purchasePrice: items.purchasePrice,
       sellingPrice: items.sellingPrice,
       sellingPriceIsInclusive: items.sellingPriceIsInclusive,
+      marginBps: items.marginBps,
       trackInventory: items.trackInventory,
       reorderLevel: items.reorderLevel,
       barcode: items.barcode,

@@ -63,6 +63,8 @@ export interface DocumentExtras {
   extraDiscount?: Paise // post-tax flat discount
   /** Invoice-level discount in basis points, applied BEFORE tax (200 = 2%). */
   schemePct?: number
+  /** Flat pre-tax discount on the whole document, in paise. Adds to schemePct. */
+  schemeAmount?: Paise
 }
 
 /**
@@ -127,7 +129,7 @@ export function computeLine(input: LineInput, isInterState: boolean): LineComput
  * Order of operations matters and mirrors the trade's printed bill:
  *   1. line value            = PCS x RATE, less any line discount
  *   2. SUB TOTAL             = sum of line values
- *   3. SCHEME / DISCOUNT     = SUB TOTAL x schemePct   <- BEFORE tax
+ *   3. SCHEME / DISCOUNT     = SUB TOTAL x schemePct + schemeAmount  <- BEFORE tax
  *   4. Taxable Value         = SUB TOTAL - scheme
  *   5. GST                   = rate applied once per tax-rate group, so the
  *                              printed "IGST @ 5.00% on 51,083.48 = 2,554.17"
@@ -149,8 +151,14 @@ export function computeDocument(
   const discountTotal = sum((c) => c.discountAmount)
 
   // ---- 3 & 4: invoice-level scheme, applied before any GST ----
+  //
+  // Two ways to express the same thing, because vendors quote it both ways: a
+  // percentage off the total, or a flat rupee figure off the total. Both land
+  // here, BEFORE tax, so GST is charged on what is actually payable. They add
+  // together when both are given, and can never exceed the sub total.
   const schemePct = Math.max(0, Math.round(extras.schemePct ?? 0))
-  const schemeAmount = Math.min(subTotal, applyBps(subTotal, schemePct))
+  const schemeFlat = Math.max(0, Math.round(extras.schemeAmount ?? 0))
+  const schemeAmount = Math.min(subTotal, applyBps(subTotal, schemePct) + schemeFlat)
   const schemeShares = apportion(schemeAmount, computed.map((c) => c.taxableValue))
   computed.forEach((c, i) => {
     c.schemeShare = schemeShares[i]

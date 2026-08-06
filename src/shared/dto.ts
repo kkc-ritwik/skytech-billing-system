@@ -174,6 +174,18 @@ export const salesDocInputSchema = z.object({
 })
 export type SalesDocInput = z.infer<typeof salesDocInputSchema>
 
+/**
+ * Purchase lines additionally carry the repricing a buyer does at goods-in:
+ * the margin applied over the purchase rate, and the resulting selling price.
+ * Both are written back onto the item when the goods are received, so the next
+ * purchase of the same design starts from what it was priced at last time.
+ */
+export const purchaseDocLineSchema = docLineSchema.extend({
+  marginBps: z.number().int().min(0).max(1_000_000).optional(),
+  sellingPrice: z.number().int().min(0).max(MAX_MONEY_PAISE, 'Selling price is too large').optional()
+})
+export type PurchaseDocLineInput = z.infer<typeof purchaseDocLineSchema>
+
 export const purchaseDocInputSchema = z.object({
   id: z.string().optional(),
   docType: z.enum(PURCHASE_DOC_TYPES),
@@ -187,8 +199,14 @@ export const purchaseDocInputSchema = z.object({
   extraChargesLabel: optionalText,
   extraCharges: z.number().int().min(0).default(0),
   extraDiscount: z.number().int().min(0).default(0),
+  /** Discount on the whole bill, applied BEFORE tax. Percentage form. */
+  schemePct: z.number().int().min(0).max(10000).default(0),
+  /** Discount on the whole bill, applied BEFORE tax. Flat rupee form, in paise. */
+  schemeAmount: z.number().int().min(0).max(MAX_MONEY_PAISE).default(0),
+  /** Batch / lot number for the whole consignment. */
+  batchNo: optionalText,
   notes: z.string().trim().max(2000).optional().nullable(),
-  lines: z.array(docLineSchema).min(1, 'Add at least one line item').max(MAX_DOC_LINES, `A document cannot have more than ${MAX_DOC_LINES} lines`)
+  lines: z.array(purchaseDocLineSchema).min(1, 'Add at least one line item').max(MAX_DOC_LINES, `A document cannot have more than ${MAX_DOC_LINES} lines`)
 })
 export type PurchaseDocInput = z.infer<typeof purchaseDocInputSchema>
 

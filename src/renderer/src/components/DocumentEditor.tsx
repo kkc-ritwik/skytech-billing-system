@@ -14,7 +14,7 @@ import { Select } from '@renderer/components/ui/select'
 interface PartyOpt { id: string; name: string; balance?: number; creditLimit?: number; creditDays?: number; billingStateCode?: string | null }
 interface ItemOpt {
   id: string; name: string; sku: string; hsnCode: string | null
-  sellingPrice: number; purchasePrice: number; taxRateBps: number | null
+  sellingPrice: number; purchasePrice: number; marginBps: number; taxRateBps: number | null
   cutLength?: number; packing?: string | null
 }
 interface LineRow {
@@ -28,10 +28,14 @@ interface LineRow {
   packing: string // e.g. BOX (sales only)
   unitPrice: string // rupees, per piece
   discount: string // rupees
+  /** Purchase only: margin over the vendor's rate, as a percentage. */
+  marginPct: string
+  /** Purchase only: selling price (MRP) the margin produced, editable. */
+  sellingPrice: string
   taxRateBps: number
 }
 
-const emptyLine: LineRow = { itemId: '', batchNo: '', expiryDate: '', description: '', hsnCode: '', quantity: '1', cutLength: '', packing: '', unitPrice: '', discount: '', taxRateBps: 0 }
+const emptyLine: LineRow = { itemId: '', batchNo: '', expiryDate: '', description: '', hsnCode: '', quantity: '1', cutLength: '', packing: '', unitPrice: '', discount: '', marginPct: '', sellingPrice: '', taxRateBps: 0 }
 
 export function DocumentEditor({
   mode,
@@ -72,6 +76,10 @@ export function DocumentEditor({
   // ---- Trade scheme + dispatch block (sales documents only) ----
   const [schemeLabel, setSchemeLabel] = useState('DISCOUNT')
   const [schemePct, setSchemePct] = useState('')
+  /** Purchase only: flat rupee discount on the whole bill, before tax. */
+  const [schemeAmountInput, setSchemeAmountInput] = useState('')
+  /** Purchase only: batch / lot number for the whole consignment. */
+  const [batchNo, setBatchNo] = useState('')
   const [dispatch, setDispatch] = useState({
     challanNo: '', orderNo: '', agentName: '', consigneeName: '', consigneeGstin: '',
     lrNo: '', lrDate: '', transportName: '', transportStation: '', caseNo: '',
@@ -85,6 +93,8 @@ export function DocumentEditor({
     setIssueDate(new Date().toISOString().slice(0, 10))
     setDueDate('')
     setReference('')
+    setSchemeAmountInput('')
+    setBatchNo('')
     setIsInterState(false)
     setInterStateTouched(false)
     setNotes('')
@@ -124,6 +134,11 @@ export function DocumentEditor({
             setIssueDate(new Date(doc.issueDate).toISOString().slice(0, 10))
             setDueDate(doc.dueDate ? new Date(doc.dueDate).toISOString().slice(0, 10) : '')
             setReference(doc.referenceNo ?? doc.supplierInvoiceNo ?? '')
+            if (!isSales) {
+              setSchemePct(doc.schemePct ? String(doc.schemePct / 100) : '')
+              setSchemeAmountInput(doc.schemeAmount ? String(toRupees(doc.schemeAmount)) : '')
+              setBatchNo(doc.batchNo ?? '')
+            }
             setIsInterState(!!doc.isInterState)
             setNotes(doc.notes ?? '')
             setExtraLabel(doc.extraChargesLabel ?? '')
@@ -183,11 +198,13 @@ export function DocumentEditor({
     taxRateBps: l.taxRateBps,
     cutLength: Number(l.cutLength || 0)
   }))
-  const schemeBps = isSales ? Math.round(Number(schemePct || 0) * 100) : 0
+  const schemeBps = Math.round(Number(schemePct || 0) * 100)
   const { lines: computed, totals } = computeDocument(lineInputs, isInterState, {
     extraCharges: toPaise(extraCharges || '0'),
     extraDiscount: toPaise(extraDiscount || '0'),
-    schemePct: schemeBps
+    schemePct: schemeBps,
+    // Purchases may also carry a flat rupee discount on the whole bill.
+    schemeAmount: isSales ? 0 : toPaise(schemeAmountInput || '0')
   })
 
   // Credit-limit warning (sales only): projected outstanding vs the party's limit.
@@ -218,16 +235,61 @@ export function DocumentEditor({
   }
 
   function setLine(i: number, patch: Partial<LineRow>): void {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
+    setLines((ls) =>
+      ls.map((l, idx) => {
+        if (idx !== i) return l
+        const next = { ...l, ...patch }
+        // Changing the vendor's rate re-prices the line at the same margin, so
+        // a buyer types the new rate and the MRP follows without being redone
+        // by hand. Only on purchases, and only when a margin is actually set.
+        if (!isSales && patch.unitPrice !== undefined && next.marginPct !== '') {
+          next.sellingPrice = sellingFromMargin(next.unitPrice, next.marginPct)
+        }
+        return next
+      })
+    )
+  }
+
+  /**
+   * Selling price from the purchase rate and a margin.
+   *
+   * Rate 4560 with a 45% margin gives 6612. The result is only a starting
+   * point: the shop rounds it to 6615 or 6620 by typing over the MRP box, and
+   * whatever is left there is what gets saved.
+   */
+  function sellingFromMargin(rate: string, marginPct: string): string {
+    const r = Number(rate || 0)
+    const m = Number(marginPct || 0)
+    if (!r || Number.isNaN(r) || Number.isNaN(m)) return ''
+    return (Math.round(r * (1 + m / 100) * 100) / 100).toFixed(2)
+  }
+
+  function setMargin(i: number, marginPct: string): void {
+    setLines((ls) =>
+      ls.map((l, idx) =>
+        idx === i ? { ...l, marginPct, sellingPrice: sellingFromMargin(l.unitPrice, marginPct) } : l
+      )
+    )
   }
   function onPickItem(i: number, itemId: string): void {
     const it = items.find((x) => x.id === itemId)
     if (!it) return setLine(i, { itemId: '' })
+    // On a purchase, reopen the item at what it was bought and priced at last
+    // time — rate, margin and MRP together — so a repeat purchase needs only
+    // the quantity typed unless something has changed.
+    const lastRate = toRupees(it.purchasePrice)
+    const lastMargin = it.marginBps ? String(it.marginBps / 100) : ''
     setLine(i, {
       itemId,
       description: it.name,
       hsnCode: it.hsnCode ?? '',
       unitPrice: String(toRupees(isSales ? it.sellingPrice : it.purchasePrice)),
+      ...(isSales
+        ? {}
+        : {
+            marginPct: lastMargin,
+            sellingPrice: it.sellingPrice ? String(toRupees(it.sellingPrice)) : sellingFromMargin(String(lastRate), lastMargin)
+          }),
       taxRateBps: it.taxRateBps ?? 0,
       // Carry the item's cut/packing so MTS is right without extra typing.
       cutLength: it.cutLength ? String(it.cutLength) : '',
@@ -304,8 +366,18 @@ export function DocumentEditor({
           supplierInvoiceNo: reference || null,
           isInterState,
           ...extras,
+          // The vendor's bill-level discount, taken off before GST.
+          schemePct: schemeBps,
+          schemeAmount: toPaise(schemeAmountInput || '0'),
+          batchNo: batchNo || null,
           notes: notes || null,
-          lines: baseLines
+          // Purchase lines carry the repricing done at goods-in: the margin
+          // applied over the vendor's rate and the selling price it produced.
+          lines: lines.map((l, i) => ({
+            ...baseLines[i],
+            marginBps: Math.round(Number(l.marginPct || 0) * 100),
+            sellingPrice: toPaise(l.sellingPrice || '0')
+          }))
         }
         await invoke('purchases:save', payload)
       }
@@ -353,6 +425,16 @@ export function DocumentEditor({
           <Label>Due date</Label>
           <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
+        {!isSales && (
+          <div className="space-y-1.5">
+            <Label>Batch / Lot no</Label>
+            <Input
+              value={batchNo}
+              onChange={(e) => setBatchNo(e.target.value)}
+              placeholder="Whole consignment"
+            />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label>{isSales ? 'Reference / PO no' : 'Supplier invoice no'}</Label>
           <Input value={reference} onChange={(e) => setReference(e.target.value)} />
@@ -388,6 +470,8 @@ export function DocumentEditor({
               {isSales && <th className="p-2 text-right">Mts</th>}
               <th className="p-2 text-right">Rate</th>
               <th className="p-2 text-right">Disc</th>
+              {!isSales && <th className="p-2 text-right" title="Margin over the purchase rate">Margin%</th>}
+              {!isSales && <th className="p-2 text-right" title="Selling price / MRP, inclusive of tax">MRP</th>}
               <th className="p-2 text-right">Tax%</th>
               <th className="p-2 text-right">Amount</th>
               <th></th>
@@ -423,6 +507,25 @@ export function DocumentEditor({
                 )}
                 <td className="p-1.5 w-28"><Input className="h-8 text-right" type="number" step="0.01" value={l.unitPrice} onChange={(e) => setLine(i, { unitPrice: e.target.value })} /></td>
                 <td className="p-1.5 w-24"><Input className="h-8 text-right" type="number" step="0.01" value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></td>
+                {!isSales && (
+                  <td className="p-1.5 w-24">
+                    <Input
+                      className="h-8 text-right" type="number" step="0.01" placeholder="45"
+                      value={l.marginPct}
+                      onChange={(e) => setMargin(i, e.target.value)}
+                    />
+                  </td>
+                )}
+                {!isSales && (
+                  <td className="p-1.5 w-28">
+                    <Input
+                      className="h-8 text-right font-medium" type="number" step="0.01" placeholder="0.00"
+                      value={l.sellingPrice}
+                      onChange={(e) => setLine(i, { sellingPrice: e.target.value })}
+                      title="Selling price / MRP. Calculated from the margin, but you can overwrite it."
+                    />
+                  </td>
+                )}
                 <td className="p-1.5 w-20">
                   <Select className="h-8 text-right" value={String(l.taxRateBps)} onChange={(e) => setLine(i, { taxRateBps: Number(e.target.value) })}>
                     {[0, 500, 1200, 1800, 2800].map((b) => <option key={b} value={b}>{b / 100}%</option>)}
@@ -461,6 +564,33 @@ export function DocumentEditor({
             </div>
             <Input placeholder="Label (DISCOUNT / SCHEME)" value={schemeLabel} onChange={(e) => setSchemeLabel(e.target.value)} className="h-9" />
             <Input type="number" step="0.01" placeholder="%" value={schemePct} onChange={(e) => setSchemePct(e.target.value)} className="h-9 text-right" />
+          </div>
+        )}
+
+        {!isSales && (
+          <div className="grid w-80 grid-cols-2 gap-2">
+            <div className="col-span-2 text-xs font-medium uppercase text-muted-foreground">
+              Discount on the whole bill (before GST)
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Discount %</Label>
+              <Input
+                type="number" step="0.01" placeholder="0"
+                value={schemePct} onChange={(e) => setSchemePct(e.target.value)}
+                className="h-9 text-right"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">or amount (₹)</Label>
+              <Input
+                type="number" step="0.01" placeholder="0.00"
+                value={schemeAmountInput} onChange={(e) => setSchemeAmountInput(e.target.value)}
+                className="h-9 text-right"
+              />
+            </div>
+            <p className="col-span-2 text-xs text-muted-foreground">
+              GST is charged on the amount left after this discount. Use either box, or both.
+            </p>
           </div>
         )}
 

@@ -1,6 +1,6 @@
 {
   "name": "shailee-grms",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shailee-GRMS — Garment Retail Management System. Offline GST billing, barcode POS and inventory for garment retailers and wholesalers.",
   "main": "./out/main/index.js",
   "author": "Shailee",

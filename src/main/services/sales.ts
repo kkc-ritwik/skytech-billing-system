@@ -9,13 +9,21 @@ import type { AuthUser } from '@shared/ipc'
 import { nextDocumentNumber } from './sequences'
 import { audit } from './audit'
 
+/**
+ * Whether an invoice may drive stock below zero.
+ *
+ * Defaults to blocking it. A shop that has never opened Settings should not be
+ * able to bill goods it does not have: stock figures silently going negative is
+ * how a stock report stops meaning anything. Turning it off stays possible for
+ * the shops that genuinely sell ahead of goods arriving.
+ */
 async function preventNegativeStockEnabled(): Promise<boolean> {
   const row = await getDb().select().from(settings).where(eq(settings.key, 'preventNegativeStock')).get()
-  if (!row) return false
+  if (!row) return true
   try {
-    return JSON.parse(row.value) === true
+    return JSON.parse(row.value) !== false
   } catch {
-    return false
+    return true
   }
 }
 

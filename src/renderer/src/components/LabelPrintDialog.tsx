@@ -10,6 +10,12 @@ import { Select } from '@renderer/components/ui/select'
 import { Dialog } from '@renderer/components/ui/dialog'
 import { Badge } from '@renderer/components/ui/badge'
 
+interface PrinterInfo {
+  name: string
+  displayName: string
+  isDefault: boolean
+}
+
 export interface LabelItem {
   id: string
   sku: string
@@ -88,15 +94,18 @@ const PRESETS: { id: string; label: string; sheet: Omit<LabelSheet, 'showName' |
   }
 ]
 
+/** Thermal roll 50 x 25 mm, one across — the shop's own label printer stock. */
 export const DEFAULT_SHEET: LabelSheet = {
-  ...PRESETS[0].sheet,
+  ...PRESETS.find((p) => p.id === 'roll-50-25')!.sheet,
   showName: true,
-  showSku: true,
+  showSku: false,
   showPrice: true,
   skipLabels: 0
 }
+export const DEFAULT_PRESET_ID = 'roll-50-25'
 
 const SETTINGS_KEY = 'labelSheet'
+const PRINTER_KEY = 'printer.labels'
 
 interface Props {
   open: boolean
@@ -111,12 +120,14 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, canPr
   const [search, setSearch] = useState('')
   const [qty, setQty] = useState<Record<string, number>>({})
   const [sheet, setSheet] = useState<LabelSheet>(DEFAULT_SHEET)
-  const [presetId, setPresetId] = useState('a4-65')
+  const [presetId, setPresetId] = useState(DEFAULT_PRESET_ID)
   const [preview, setPreview] = useState<string>('')
   const [layout, setLayout] = useState<Layout | null>(null)
   const [previewError, setPreviewError] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [previewing, setPreviewing] = useState(false)
+  const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  const [deviceName, setDeviceName] = useState('')
   const previewSeq = useRef(0)
 
   const barcoded = useMemo(() => items.filter((i) => i.barcode), [items])
@@ -138,6 +149,7 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, canPr
     setSearch('')
     setPreviewError('')
     void (async () => {
+      let savedPrinter = ''
       try {
         const s = await invoke<Record<string, unknown>>('settings:get', {})
         const saved = s?.[SETTINGS_KEY] as (LabelSheet & { presetId?: string }) | undefined
@@ -145,8 +157,18 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, canPr
           setSheet({ ...DEFAULT_SHEET, ...saved })
           if (saved.presetId) setPresetId(saved.presetId)
         }
+        savedPrinter = typeof s?.[PRINTER_KEY] === 'string' ? (s[PRINTER_KEY] as string) : ''
       } catch {
         /* first run, or no permission to read settings — defaults are fine */
+      }
+      // Offer the printer used last time, else whatever Windows calls default.
+      try {
+        const list = await invoke<PrinterInfo[]>('print:listPrinters', {})
+        setPrinters(list)
+        const remembered = list.find((x) => x.name === savedPrinter)
+        setDeviceName(remembered?.name ?? list.find((x) => x.isDefault)?.name ?? list[0]?.name ?? '')
+      } catch {
+        setPrinters([])
       }
     })()
     const init: Record<string, number> = {}
@@ -231,17 +253,44 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, canPr
     })
   }
 
+  /** Remember the sheet and the printer, so the next run needs neither retyped. */
+  async function remember(): Promise<void> {
+    try {
+      await invoke('settings:save', {
+        [SETTINGS_KEY]: { ...sheet, presetId },
+        ...(deviceName ? { [PRINTER_KEY]: deviceName } : {})
+      })
+    } catch {
+      /* saving the preference is a convenience, never a reason to fail the print */
+    }
+  }
+
   async function print(): Promise<void> {
+    if (!selected.length) return toast.error('Tick at least one item to print.')
+    if (!deviceName) return toast.error('Choose a printer first.')
+    setBusy(true)
+    try {
+      await invoke('barcode:labelsPrint', { lines: selected, sheet, deviceName })
+      await remember()
+      const p = printers.find((x) => x.name === deviceName)
+      toast.success(`${totalLabels} label${totalLabels === 1 ? '' : 's'} sent to ${p?.displayName ?? deviceName}.`)
+      onClose()
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'VALIDATION' && /cancel/i.test(err.message)) return
+      toast.error(err instanceof ApiError ? err.message : 'Could not print the labels.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Escape hatch: produce a PDF instead, for emailing or a printer we cannot see. */
+  async function savePdf(): Promise<void> {
     if (!selected.length) return toast.error('Tick at least one item to print.')
     setBusy(true)
     try {
       await invoke('barcode:labels', { lines: selected, sheet })
-      try {
-        await invoke('settings:save', { [SETTINGS_KEY]: { ...sheet, presetId } })
-      } catch {
-        /* saving the preference is a convenience, never a reason to fail the print */
-      }
-      toast.success(`${totalLabels} label${totalLabels === 1 ? '' : 's'} sent to PDF.`)
+      await remember()
+      toast.success(`${totalLabels} label${totalLabels === 1 ? '' : 's'} saved as PDF.`)
       onClose()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'VALIDATION' && /cancel/i.test(err.message)) return
@@ -278,10 +327,27 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, canPr
               'Nothing selected yet.'
             )}
           </div>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-2">
+            <Select
+              aria-label="Printer"
+              className="h-9 w-56"
+              value={deviceName}
+              onChange={(e) => setDeviceName(e.target.value)}
+              disabled={printers.length === 0}
+            >
+              {printers.length === 0 && <option value="">No printer found</option>}
+              {printers.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.displayName}{p.isDefault ? ' (default)' : ''}
+                </option>
+              ))}
+            </Select>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => void print()} disabled={busy || !selected.length || !canPrint || !!previewError}>
-              {busy ? <Loader2 className="animate-spin" /> : <Printer />} Print labels
+            <Button variant="outline" onClick={() => void savePdf()} disabled={busy || !selected.length || !canPrint || !!previewError}>
+              Save PDF
+            </Button>
+            <Button onClick={() => void print()} disabled={busy || !selected.length || !canPrint || !!previewError || !deviceName}>
+              {busy ? <Loader2 className="animate-spin" /> : <Printer />} Print
             </Button>
           </div>
         </div>

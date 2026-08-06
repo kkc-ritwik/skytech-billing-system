@@ -5,7 +5,8 @@ import {
   purchaseDocuments,
   purchaseDocumentLines,
   parties,
-  stockLedger
+  stockLedger,
+  items
 } from '../db/schema'
 import { purchaseDocInputSchema, type PurchaseDocInput } from '@shared/dto'
 import { computeDocument } from '@shared/calc'
@@ -85,6 +86,34 @@ async function writeStock(
   }
 }
 
+/**
+ * Carry the buyer's repricing back onto the item master when goods are received.
+ *
+ * The purchase screen is where a shop decides what a design will sell for: the
+ * vendor's rate comes in, a margin is applied, and the resulting MRP is what
+ * goes on the sticker. Writing all three back means the next purchase of the
+ * same design opens with what it was priced at last time, and the price printed
+ * on the label is the price it was just given.
+ *
+ * Only a GRN reprices. A purchase order is an intention to buy, and a return is
+ * goods going back out — neither should move the selling price.
+ */
+async function repriceItems(
+  tx: DbOrTx,
+  docType: string,
+  lines: { itemId?: string | null; unitPrice: number; marginBps?: number; sellingPrice?: number }[]
+): Promise<void> {
+  if (docType !== 'grn') return
+  for (const l of lines) {
+    if (!l.itemId) continue
+    const patch: Record<string, unknown> = { purchasePrice: l.unitPrice, updatedAt: new Date() }
+    if (typeof l.marginBps === 'number') patch.marginBps = l.marginBps
+    // A selling price of 0 means "not priced here" — never wipe an existing one.
+    if (typeof l.sellingPrice === 'number' && l.sellingPrice > 0) patch.sellingPrice = l.sellingPrice
+    await tx.update(items).set(patch).where(eq(items.id, l.itemId))
+  }
+}
+
 export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): Promise<{ id: string; number: string }> {
   const d = purchaseDocInputSchema.parse(input)
   const issueDate = new Date(d.issueDate)
@@ -97,7 +126,13 @@ export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): 
       taxRateBps: l.taxRateBps
     })),
     d.isInterState,
-    { extraCharges: d.extraCharges, extraDiscount: d.extraDiscount }
+    {
+      extraCharges: d.extraCharges,
+      extraDiscount: d.extraDiscount,
+      // Vendor's bill-level discount, taken off BEFORE GST is worked out.
+      schemePct: d.schemePct,
+      schemeAmount: d.schemeAmount
+    }
   )
 
   const result = await getDb().transaction(async (tx) => {
@@ -121,6 +156,8 @@ export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): 
           supplierInvoiceDate: d.supplierInvoiceDate ? new Date(d.supplierInvoiceDate) : null,
           isInterState: d.isInterState,
           extraChargesLabel: d.extraChargesLabel ?? null,
+          schemePct: d.schemePct,
+          batchNo: d.batchNo ?? null,
           notes: d.notes ?? null,
           ...totals,
           updatedAt: new Date()
@@ -141,6 +178,8 @@ export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): 
           supplierInvoiceDate: d.supplierInvoiceDate ? new Date(d.supplierInvoiceDate) : null,
           isInterState: d.isInterState,
           extraChargesLabel: d.extraChargesLabel ?? null,
+          schemePct: d.schemePct,
+          batchNo: d.batchNo ?? null,
           status: STATUS_FOR[d.docType] ?? 'confirmed',
           notes: d.notes ?? null,
           ...totals,
@@ -160,7 +199,7 @@ export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): 
         itemId: src.itemId ?? null,
         description: src.description,
         hsnCode: src.hsnCode ?? null,
-        batchNo: src.batchNo ?? null,
+        batchNo: src.batchNo ?? d.batchNo ?? null,
         expiryDate: src.expiryDate ? new Date(src.expiryDate) : null,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
@@ -182,9 +221,23 @@ export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): 
       d.docType,
       docId,
       number,
-      d.lines.map((l, i) => ({ itemId: l.itemId ?? null, quantity: lines[i].quantity, unitPrice: lines[i].unitPrice, batchNo: l.batchNo ?? null, expiryDate: l.expiryDate ?? null })),
+      d.lines.map((l, i) => ({ itemId: l.itemId ?? null, quantity: lines[i].quantity, unitPrice: lines[i].unitPrice, batchNo: l.batchNo ?? d.batchNo ?? null, expiryDate: l.expiryDate ?? null })),
       issueDate,
       user.id
+    )
+
+    // Batch/lot is entered once for the whole consignment; a line may still
+    // override it. Fall back to the document's value so the stock ledger and
+    // the printed paperwork agree.
+    await repriceItems(
+      tx,
+      d.docType,
+      d.lines.map((l, i) => ({
+        itemId: l.itemId ?? null,
+        unitPrice: lines[i].unitPrice,
+        marginBps: l.marginBps,
+        sellingPrice: l.sellingPrice
+      }))
     )
 
     return { id: docId, number }
@@ -216,6 +269,11 @@ export async function convertPurchaseDoc(
       extraChargesLabel: source.extraChargesLabel ?? null,
       extraCharges: source.extraCharges ?? 0,
       extraDiscount: source.extraDiscount ?? 0,
+      // A converted document carries the same pre-tax bill discount as the
+      // order it came from, so the amount payable does not change on convert.
+      schemePct: 0,
+      schemeAmount: source.schemeAmount ?? 0,
+      batchNo: source.batchNo ?? null,
       notes: source.notes ?? null,
       lines: source.lines.map((l) => ({
         itemId: l.itemId ?? null,
