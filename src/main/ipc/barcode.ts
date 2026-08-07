@@ -6,6 +6,7 @@ import {
   posContext,
   renderLabelSheetHtml,
   computeLabelLayout,
+  ensureBarcodes,
   type ScanResult,
   type LabelRequest,
   type LabelLayout,
@@ -14,6 +15,7 @@ import {
 import { labelRequestSchema, MAX_LABELS_PER_JOB } from '@shared/dto'
 import { exportBarcodeLabels, printBarcodeLabels } from '../services/pdf'
 import { listPrinters, type PrinterInfo } from '../services/printing'
+import { getDb } from '../db/client'
 
 export function registerBarcodeRoutes(): void {
   // Company state code + shop defaults, needed wherever a document is raised.
@@ -34,6 +36,16 @@ export function registerBarcodeRoutes(): void {
 
   route<{ itemId: string }, { barcode: string }>('barcode:generate', 'items:manage', (p, ctx) =>
     generateBarcodeFor(p.itemId, ctx.user)
+  )
+
+  /**
+   * Give the named items a barcode if they lack one. Used wherever a label is
+   * about to be printed, so "this item has no barcode" stops being a dead end.
+   */
+  route<{ itemIds: string[] }, { assigned: { id: string; name: string; barcode: string }[] }>(
+    'barcode:ensureFor',
+    'items:manage',
+    async (p, ctx) => ({ assigned: await ensureBarcodes(getDb(), p?.itemIds ?? [], ctx.user) })
   )
 
   route<undefined, { assigned: { id: string; sku: string; name: string; barcode: string }[] }>(

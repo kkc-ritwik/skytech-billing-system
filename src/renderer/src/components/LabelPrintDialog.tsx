@@ -132,10 +132,15 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
   const [busy, setBusy] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  /** Designs given a barcode automatically while this dialog was open. */
+  const [generated, setGenerated] = useState<string[]>([])
   const [deviceName, setDeviceName] = useState('')
   const previewSeq = useRef(0)
 
-  const barcoded = useMemo(() => items.filter((i) => i.barcode), [items])
+  // Every active item is listed, barcode or not. A design typed in a moment ago
+  // has no code yet, and hiding it makes the shop think it has vanished; the
+  // code is created for it instead when it is ticked.
+  const barcoded = useMemo(() => items, [items])
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return barcoded
@@ -153,6 +158,7 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
     if (!open) return
     setSearch('')
     setPreviewError('')
+    setGenerated([])
     void (async () => {
       let savedPrinter = ''
       try {
@@ -229,6 +235,43 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
     const t = setTimeout(() => void refreshPreview(), 350)
     return () => clearTimeout(t)
   }, [open, refreshPreview])
+
+  /**
+   * Create barcodes for anything ticked that does not have one.
+   *
+   * The shop's own words: a design entered during a purchase has no code, and
+   * the label screen used to stop dead and tell them to go and generate codes
+   * first. There is nothing to decide here — a design being labelled needs a
+   * code — so it is simply created, and the shop is told it happened.
+   */
+  useEffect(() => {
+    if (!open || !canPrint) return
+    const missing = selected
+      .map((l) => items.find((i) => i.id === l.itemId))
+      .filter((i): i is LabelItem => !!i && !i.barcode)
+    if (!missing.length) return
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await invoke<{ assigned: { id: string; name: string; barcode: string }[] }>(
+          'barcode:ensureFor',
+          { itemIds: missing.map((i) => i.id) }
+        )
+        if (cancelled || !res.assigned.length) return
+        // Patch the codes in locally so the preview redraws at once.
+        for (const a of res.assigned) {
+          const it = items.find((i) => i.id === a.id)
+          if (it) it.barcode = a.barcode
+        }
+        setGenerated((g) => [...new Set([...g, ...res.assigned.map((a) => a.name)])])
+        void refreshPreview()
+      } catch {
+        /* the preview will report it if the code is genuinely still missing */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [open, canPrint, selected, items, refreshPreview])
 
   function setCopies(id: string, n: number): void {
     setQty((q) => {
@@ -361,7 +404,7 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
     >
       {noBarcodes ? (
         <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          None of your items have a barcode yet. Close this and press <b>Generate barcodes</b> first.
+          There are no items to label yet. Add an item, or receive some goods, and come back.
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
@@ -390,7 +433,7 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
 
             <div className="max-h-[46vh] overflow-auto rounded-md border">
               {visible.length === 0 ? (
-                <div className="p-6 text-center text-sm text-muted-foreground">No barcoded item matches “{search}”.</div>
+                <div className="p-6 text-center text-sm text-muted-foreground">No item matches “{search}”.</div>
               ) : (
                 <table className="w-full text-sm">
                   <tbody>
@@ -409,7 +452,7 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
                           <td className="min-w-0 p-2 align-middle">
                             <div className="truncate font-medium">{i.name}</div>
                             <div className="truncate font-mono text-xs text-muted-foreground">
-                              {i.sku} · {i.barcode} · {formatINR(i.sellingPrice)}
+                              {i.sku} · {i.barcode ?? 'barcode will be created'} · {formatINR(i.sellingPrice)}
                             </div>
                           </td>
                           <td className="whitespace-nowrap p-2 text-right align-middle text-xs text-muted-foreground">
@@ -512,6 +555,11 @@ export function LabelPrintDialog({ open, onClose, items, initialSelection, initi
               ))}
             </div>
 
+            {generated.length > 0 && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+                Barcode created for <b>{generated.join(', ')}</b> — these are ready to print.
+              </div>
+            )}
             {previewError ? (
               <div className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />

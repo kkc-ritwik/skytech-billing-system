@@ -1,5 +1,5 @@
 import { and, eq, isNull, sql, inArray, like, or } from 'drizzle-orm'
-import { getDb } from '../db/client'
+import { getDb, type DbOrTx } from '../db/client'
 import { items, taxRates, stockLedger } from '../db/schema'
 import { buildBarcode, normaliseScan, code128Svg, code128ModuleCount, isValidInternalBarcode } from '@shared/barcode'
 import type { AuthUser } from '@shared/ipc'
@@ -15,8 +15,8 @@ import { getCompany, getSettings } from './settings'
  */
 
 /** Highest internal sequence already issued, so numbering never collides. */
-async function nextSequence(): Promise<number> {
-  const rows = await getDb()
+async function nextSequence(db: DbOrTx = getDb()): Promise<number> {
+  const rows = await db
     .select({ barcode: items.barcode })
     .from(items)
     .where(and(isNull(items.deletedAt), like(items.barcode, '22%')))
@@ -75,6 +75,55 @@ export async function generateBarcodeFor(itemId: string, user: AuthUser): Promis
   await db.update(items).set({ barcode, updatedAt: new Date() }).where(eq(items.id, itemId))
   await audit({ userId: user.id, username: user.username, action: 'item.barcode.generate', entityType: 'item', entityId: itemId })
   return { barcode }
+}
+
+/**
+ * Give every one of these items a barcode, if it does not already have one.
+ *
+ * A design typed straight into a purchase has no barcode yet, and the shop only
+ * finds out at the moment it tries to print the sticker — which is too late,
+ * because the delivery is open on the counter. So the code is created when the
+ * goods are received rather than being demanded as a separate chore beforehand.
+ *
+ * Existing barcodes are never touched: a sticker already stuck on a piece must
+ * keep scanning to the same design forever.
+ *
+ * Returns the items that were given a new code, so the caller can say so.
+ */
+export async function ensureBarcodes(
+  db: DbOrTx,
+  itemIds: string[],
+  user: AuthUser
+): Promise<{ id: string; name: string; barcode: string }[]> {
+  const ids = [...new Set(itemIds.filter(Boolean))]
+  if (!ids.length) return []
+
+  const rows = await db
+    .select({ id: items.id, name: items.name, barcode: items.barcode })
+    .from(items)
+    .where(and(inArray(items.id, ids), isNull(items.deletedAt)))
+
+  const missing = rows.filter((r) => !r.barcode || !r.barcode.trim())
+  if (!missing.length) return []
+
+  // One sequence read, then increment locally: re-reading per item inside the
+  // same transaction would hand out the same number twice.
+  let seq = await nextSequence(db)
+  const assigned: { id: string; name: string; barcode: string }[] = []
+  for (const r of missing) {
+    const barcode = buildBarcode(seq++)
+    await db.update(items).set({ barcode, updatedAt: new Date() }).where(eq(items.id, r.id))
+    assigned.push({ id: r.id, name: r.name, barcode })
+  }
+
+  await audit({
+    userId: user.id,
+    username: user.username,
+    action: 'item.barcode.auto_generate',
+    entityType: 'item',
+    details: { count: assigned.length, items: assigned.map((a) => a.name).slice(0, 20) }
+  })
+  return assigned
 }
 
 export interface ScanResult {

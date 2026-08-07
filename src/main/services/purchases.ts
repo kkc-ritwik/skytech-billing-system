@@ -13,6 +13,7 @@ import { computeDocument } from '@shared/calc'
 import type { AuthUser } from '@shared/ipc'
 import { nextDocumentNumber } from './sequences'
 import { audit } from './audit'
+import { ensureBarcodes } from './barcode'
 
 const STATUS_FOR: Record<string, string> = {
   purchase_order: 'confirmed',
@@ -114,7 +115,10 @@ async function repriceItems(
   }
 }
 
-export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): Promise<{ id: string; number: string }> {
+export async function savePurchaseDoc(
+  input: PurchaseDocInput,
+  user: AuthUser
+): Promise<{ id: string; number: string; barcodesAssigned?: number }> {
   const d = purchaseDocInputSchema.parse(input)
   const issueDate = new Date(d.issueDate)
   const { lines, totals } = computeDocument(
@@ -240,7 +244,15 @@ export async function savePurchaseDoc(input: PurchaseDocInput, user: AuthUser): 
       }))
     )
 
-    return { id: docId, number }
+    // Goods that have just arrived need stickers, and a design entered straight
+    // into the purchase has no barcode yet. Create the missing ones here rather
+    // than making the shop stop and run a separate step before it can print.
+    const barcoded =
+      d.docType === 'grn'
+        ? await ensureBarcodes(tx, d.lines.map((l) => l.itemId).filter((x): x is string => !!x), user)
+        : []
+
+    return { id: docId, number, barcodesAssigned: barcoded.length }
   })
 
   // Audit AFTER commit — it uses the base connection and would otherwise

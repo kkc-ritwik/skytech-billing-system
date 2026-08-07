@@ -671,6 +671,16 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Shailee-GR
   just arrived. Say yes and the label screen opens with every design already
   ticked and <b>one sticker per piece received</b>. Change any quantity if you
   want, choose the printer, and print. See section 12 for the label sizes.</p>
+  <div class="tip"><b>New designs do not need barcodes made first</b>
+    A design typed straight into the purchase has no barcode yet. One is created
+    for it automatically the moment the goods are received, so you never have to
+    stop and run <b>Generate barcodes</b> before you can print. A design that
+    already has a barcode keeps it — stickers already stuck on pieces go on
+    scanning to the same design.</div>
+  <div class="tip"><b>Changed the price? Just reprint</b>
+    The sticker always carries the design's current MRP, so after repricing at
+    goods-in the next label prints the new figure. The barcode number itself never
+    changes.</div>
 
   <div class="tip"><b>Check it worked</b>
     Open <b>Inventory</b> — the pieces should now appear against each design.</div>
