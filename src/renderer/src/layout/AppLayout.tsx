@@ -12,6 +12,7 @@ import { Dashboard } from '@renderer/pages/Dashboard'
 import { Placeholder } from '@renderer/pages/Placeholder'
 import { ItemsPage } from '@renderer/pages/ItemsPage'
 import { PartiesPage } from '@renderer/pages/PartiesPage'
+import { SalespersonsPage } from '@renderer/pages/SalespersonsPage'
 import { SettingsPage } from '@renderer/pages/SettingsPage'
 import { InventoryPage } from '@renderer/pages/InventoryPage'
 import { PurchasesPage } from '@renderer/pages/PurchasesPage'
@@ -120,6 +121,7 @@ function RoutesView(): JSX.Element {
       <Route path="/" element={<Dashboard />} />
       <Route path="/items" element={<ItemsPage />} />
       <Route path="/parties" element={<PartiesPage />} />
+      <Route path="/salespersons" element={<SalespersonsPage />} />
       <Route path="/inventory" element={<InventoryPage />} />
       <Route path="/purchases" element={<PurchasesPage />} />
       <Route path="/sales" element={<SalesPage />} />

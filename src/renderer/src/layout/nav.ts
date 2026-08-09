@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   ScrollText,
   KeyRound,
-  LifeBuoy
+  LifeBuoy,
+  BadgeIndianRupee
 } from 'lucide-react'
 import type { Permission } from '@shared/permissions'
 
@@ -38,7 +39,8 @@ export const NAV: NavSection[] = [
     title: 'Masters',
     items: [
       { label: 'Items', to: '/items', icon: Package, permission: 'items:view' },
-      { label: 'Clients & Vendors', to: '/parties', icon: Users, permission: 'parties:view' }
+      { label: 'Clients & Vendors', to: '/parties', icon: Users, permission: 'parties:view' },
+      { label: 'Salespersons', to: '/salespersons', icon: BadgeIndianRupee, permission: 'parties:view' }
     ]
   },
   {
