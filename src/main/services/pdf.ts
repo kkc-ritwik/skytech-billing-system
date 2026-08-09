@@ -207,40 +207,30 @@ const PX_PER_MM = 96 / 25.4
 const MM_PER_INCH = 25.4
 
 /**
- * Width and height of a continuous-roll receipt, in microns.
+ * Width and height of a continuous-roll receipt, in inches.
  *
- * The width comes from the document's own `@page` rule so a shop's roll setting
- * is respected; the height is measured from what actually rendered, because the
- * length of a bill is however long the shopping was. A little tail is added so
- * the last line is never clipped by a rounding error.
+ * The width is passed in rather than read back out of the document's `@page`
+ * rule: Chromium does not reliably expose that rule's `size` to script, and an
+ * unreadable rule silently fell back to 79 mm, so a shop that set 58 mm still
+ * got 79. The height is measured from what actually rendered, because the
+ * length of a bill is however long the shopping was, with a small tail so the
+ * last line is never clipped by rounding.
  */
-async function measuredRollSize(win: BrowserWindow): Promise<{ width: number; height: number }> {
-  const measured = (await win.webContents.executeJavaScript(`
-    (() => {
-      const rule = [...document.styleSheets]
-        .flatMap((s) => { try { return [...s.cssRules] } catch { return [] } })
-        .find((r) => r.constructor && r.constructor.name === 'CSSPageRule')
-      const declared = rule && rule.style && rule.style.size ? rule.style.size : ''
-      const w = /([\d.]+)mm/.exec(declared)
-      return {
-        widthMm: w ? Number(w[1]) : 79,
-        heightPx: Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight
-        )
-      }
-    })()
-  `)) as { widthMm: number; heightMm?: number; heightPx: number }
+async function measuredRollSize(win: BrowserWindow, widthMm: number): Promise<{ width: number; height: number }> {
+  const heightPx = (await win.webContents.executeJavaScript(
+    'Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)'
+  )) as number
 
-  const widthMm = Math.max(40, Math.min(120, Number(measured.widthMm) || 79))
-  const heightMm = Math.max(40, Math.ceil(measured.heightPx / PX_PER_MM) + 4)
-  return { width: widthMm / MM_PER_INCH, height: heightMm / MM_PER_INCH }
+  const w = Math.max(40, Math.min(120, Number(widthMm) || 79))
+  const h = Math.max(40, Math.ceil(Number(heightPx) / PX_PER_MM) + 4)
+  return { width: w / MM_PER_INCH, height: h / MM_PER_INCH }
 }
 
 /** Render to a PDF buffer. 'thermal' measures the roll so the width is real. */
 async function renderPdfBuffer(
   html: string,
-  paperSize: 'A4' | 'A5' | 'thermal' | 'css'
+  paperSize: 'A4' | 'A5' | 'thermal' | 'css',
+  opts: { receiptWidthMm?: number } = {}
 ): Promise<Buffer> {
   const win = new BrowserWindow({
     show: false,
@@ -267,7 +257,7 @@ async function renderPdfBuffer(
         ? await win.webContents.printToPDF({
             printBackground: true,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
-            pageSize: await measuredRollSize(win)
+            pageSize: await measuredRollSize(win, opts.receiptWidthMm ?? 79)
           })
         : paperSize === 'css'
           ? await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
@@ -298,6 +288,8 @@ export async function exportDocumentPdf(
   let html: string
   let paper: 'A4' | 'A5' | 'thermal'
   let number: string
+  /** Roll width for a counter receipt; ignored for A4 paperwork. */
+  let receiptWidthMm = Number(settings.receiptWidthMm ?? 79) || 79
 
   if (useTextile) {
     const built = await buildTextileModel(id)
@@ -308,10 +300,11 @@ export async function exportDocumentPdf(
     const built = await buildModel(type, id)
     html = format === 'thermal' ? renderThermalHtml(built.model) : renderDocumentHtml(built.model)
     paper = format === 'thermal' ? 'thermal' : built.model.paperSize
+    receiptWidthMm = built.model.receiptWidthMm ?? receiptWidthMm
     number = built.number
   }
 
-  const buffer = await renderPdfBuffer(html, paper)
+  const buffer = await renderPdfBuffer(html, paper, { receiptWidthMm })
 
   const safeName = number.replace(/[\\/:*?"<>|]/g, '-')
   const res = await dialog.showSaveDialog({
