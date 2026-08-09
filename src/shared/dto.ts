@@ -135,6 +135,8 @@ export const SALES_DOC_TYPES = ['sales_order', 'proforma', 'invoice', 'challan',
 export const PURCHASE_DOC_TYPES = ['purchase_order', 'grn', 'purchase_return'] as const
 
 export const salesDocInputSchema = z.object({
+  /** Shop floor staff credited with the sale. */
+  salespersonId: z.string().optional().nullable(),
   id: z.string().optional(),
   docType: z.enum(SALES_DOC_TYPES),
   partyId: z.string().min(1, 'Select a client'),

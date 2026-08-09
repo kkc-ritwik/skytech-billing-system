@@ -117,7 +117,13 @@ const ALLOWED_SETTING_KEYS = new Set([
   // Free text printed at the bottom of a retail receipt, a few short lines.
   'receiptFooterLines',
   // Default margin % used to derive selling price from purchase rate.
-  'defaultMarginPct'
+  'defaultMarginPct',
+  // Counter receipt layout. Width is in millimetres so a shop can match
+  // whatever roll its printer takes — 79 mm is the common default, but 58 mm
+  // and 80 mm printers are both in the field.
+  'receiptWidthMm',
+  'receiptShowLogo',
+  'receiptShowGstBreakup'
 ])
 
 export async function setSettings(patch: Record<string, unknown>, user: AuthUser): Promise<void> {

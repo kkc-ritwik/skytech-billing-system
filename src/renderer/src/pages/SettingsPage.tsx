@@ -32,6 +32,9 @@ export function SettingsPage(): JSX.Element {
     invoiceTemplate: string
     invoiceInvocation: string
     receiptFooterLines: string[]
+    receiptWidthMm: number
+    receiptShowLogo: boolean
+    receiptShowGstBreakup: boolean
     defaultSchemeLabel: string
     defaultSchemePct: number
     defaultCutLength: number
@@ -42,6 +45,9 @@ export function SettingsPage(): JSX.Element {
     invoiceTemplate: 'standard',
     invoiceInvocation: '',
     receiptFooterLines: [],
+    receiptWidthMm: 79,
+    receiptShowLogo: true,
+    receiptShowGstBreakup: true,
     defaultSchemeLabel: 'DISCOUNT',
     defaultSchemePct: 0,
     defaultCutLength: 0,
@@ -72,6 +78,9 @@ export function SettingsPage(): JSX.Element {
           invoiceTemplate: (s?.invoiceTemplate as string) ?? 'standard',
           invoiceInvocation: (s?.invoiceInvocation as string) ?? '',
           receiptFooterLines: Array.isArray(s?.receiptFooterLines) ? (s.receiptFooterLines as string[]) : [],
+          receiptWidthMm: Number(s?.receiptWidthMm ?? 79) || 79,
+          receiptShowLogo: s?.receiptShowLogo !== false,
+          receiptShowGstBreakup: s?.receiptShowGstBreakup !== false,
           defaultSchemeLabel: (s?.defaultSchemeLabel as string) ?? 'DISCOUNT',
           defaultSchemePct: (s?.defaultSchemePct as number) ?? 0,
           defaultCutLength: (s?.defaultCutLength as number) ?? 0,
@@ -301,6 +310,35 @@ export function SettingsPage(): JSX.Element {
 
             <div className="col-span-2 border-t pt-3 text-xs font-medium uppercase text-muted-foreground">
               Counter receipt
+            </div>
+            <Field label="Receipt roll width (mm)">
+              <Input
+                type="number"
+                step="1"
+                defaultValue={String(prefs.receiptWidthMm)}
+                disabled={!canManage}
+                onBlur={(e) => void savePrefs({ receiptWidthMm: Number(e.target.value) || 79 })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                79 mm suits most counter printers. Set 58 for a narrow roll, or whatever
+                your printer takes — the bill is laid out to fit.
+              </p>
+            </Field>
+            <div className="space-y-2 self-end">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox" className="size-4" checked={prefs.receiptShowLogo} disabled={!canManage}
+                  onChange={(e) => void savePrefs({ receiptShowLogo: e.target.checked })}
+                />
+                Print the shop logo on the receipt
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox" className="size-4" checked={prefs.receiptShowGstBreakup} disabled={!canManage}
+                  onChange={(e) => void savePrefs({ receiptShowGstBreakup: e.target.checked })}
+                />
+                Print the GST breakup, grouped by rate
+              </label>
             </div>
             <Field label="Footer lines printed at the bottom of the retail bill">
               <textarea

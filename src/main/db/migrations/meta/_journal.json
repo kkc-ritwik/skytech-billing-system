@@ -64,6 +64,13 @@
       "when": 1786263332996,
       "tag": "0008_fuzzy_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786279291294,
+      "tag": "0009_tough_silver_fox",
+      "breakpoints": true
     }
   ]
 }

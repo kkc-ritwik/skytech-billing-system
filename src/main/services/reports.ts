@@ -1,7 +1,7 @@
 import { and, between, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { startOfMonth, endOfMonth, subMonths, format as fmtDate } from 'date-fns'
 import { getDb } from '../db/client'
-import { salesDocuments, salesDocumentLines, purchaseDocuments, parties, stockLedger } from '../db/schema'
+import { salesDocuments, salesDocumentLines, purchaseDocuments, parties, stockLedger, salespersons } from '../db/schema'
 import { stockSummary } from './inventory'
 
 export interface DashboardStats {
@@ -311,4 +311,107 @@ export async function gstSummary(fromMs: number, toMs: number) {
     .from(salesDocuments)
     .where(and(eq(salesDocuments.docType, 'invoice'), isNull(salesDocuments.deletedAt), between(salesDocuments.issueDate, new Date(fromMs), new Date(toMs))))
     .groupBy(salesDocuments.docType)
+}
+
+export interface SalespersonSaleRow {
+  salespersonId: string | null
+  salespersonName: string
+  invoiceCount: number
+  netSales: number
+  incentiveBps: number
+  incentiveAmount: number
+}
+
+export interface SalespersonBillRow {
+  id: string
+  number: string
+  issueDate: number
+  partyName: string
+  salespersonName: string
+  grandTotal: number
+}
+
+/**
+ * What each salesperson sold in a period, and every bill behind it.
+ *
+ * The shop settles incentives at the end of the day, month and year, so both
+ * views are returned together: a total per person to pay against, and the bills
+ * that make up that total so any figure can be checked rather than trusted.
+ *
+ * Sales are counted net of returns — a saree sold and brought back has not been
+ * sold, and paying incentive on it would be paying twice for nothing.
+ */
+export async function salespersonSales(fromMs: number, toMs: number): Promise<{
+  summary: SalespersonSaleRow[]
+  bills: SalespersonBillRow[]
+}> {
+  const db = getDb()
+  const from = new Date(fromMs)
+  const to = new Date(toMs)
+
+  const rows = await db
+    .select({
+      id: salesDocuments.id,
+      number: salesDocuments.number,
+      docType: salesDocuments.docType,
+      issueDate: salesDocuments.issueDate,
+      grandTotal: salesDocuments.grandTotal,
+      partyName: parties.name,
+      salespersonId: salesDocuments.salespersonId,
+      salespersonName: salespersons.name,
+      incentiveBps: salespersons.incentiveBps
+    })
+    .from(salesDocuments)
+    .innerJoin(parties, eq(salesDocuments.partyId, parties.id))
+    .leftJoin(salespersons, eq(salesDocuments.salespersonId, salespersons.id))
+    .where(
+      and(
+        isNull(salesDocuments.deletedAt),
+        inArray(salesDocuments.docType, ['invoice', 'sales_return']),
+        between(salesDocuments.issueDate, from, to)
+      )
+    )
+    .orderBy(salesDocuments.issueDate)
+
+  const byPerson = new Map<string, SalespersonSaleRow>()
+  const bills: SalespersonBillRow[] = []
+
+  for (const r of rows) {
+    const key = r.salespersonId ?? '__none__'
+    const name = r.salespersonName ?? 'Not recorded'
+    const signed = r.docType === 'sales_return' ? -r.grandTotal : r.grandTotal
+
+    const cur =
+      byPerson.get(key) ??
+      {
+        salespersonId: r.salespersonId ?? null,
+        salespersonName: name,
+        invoiceCount: 0,
+        netSales: 0,
+        incentiveBps: r.incentiveBps ?? 0,
+        incentiveAmount: 0
+      }
+    if (r.docType === 'invoice') cur.invoiceCount += 1
+    cur.netSales += signed
+    byPerson.set(key, cur)
+
+    bills.push({
+      id: r.id,
+      number: r.number,
+      issueDate: (r.issueDate as Date).getTime(),
+      partyName: r.partyName,
+      salespersonName: name,
+      grandTotal: signed
+    })
+  }
+
+  const summary = [...byPerson.values()].map((s) => ({
+    ...s,
+    // A rate of zero means the shop works incentives out itself; show nothing
+    // rather than a misleading zero-rupee entitlement.
+    incentiveAmount: s.incentiveBps > 0 ? Math.round((Math.max(0, s.netSales) * s.incentiveBps) / 10000) : 0
+  }))
+  summary.sort((a, b) => b.netSales - a.netSales)
+
+  return { summary, bills: bills.reverse() }
 }

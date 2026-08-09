@@ -207,6 +207,7 @@ export async function saveSalesDoc(input: SalesDocInput, user: AuthUser): Promis
 
   /** Header fields shared by the insert and the update paths. */
   const dispatchColumns = {
+    salespersonId: d.salespersonId ?? null,
     schemeLabel: d.schemeLabel ?? null,
     schemePct: d.schemePct,
     challanNo: d.challanNo ?? null,

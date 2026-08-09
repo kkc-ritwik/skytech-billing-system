@@ -61,6 +61,16 @@ export const salesDocuments = sqliteTable(
     challanNo: text('challan_no'),
     orderNo: text('order_no'),
     agentName: text('agent_name'),
+    /**
+     * Shop floor staff credited with this sale.
+     *
+     * One per bill: the shop wants to know who sold what, and at a saree
+     * counter a single bill is normally one customer being served by one
+     * person. Nullable, because a bill raised from the back office has nobody
+     * on the floor to credit.
+     */
+    salespersonId: text('salesperson_id'),
+
     consigneeName: text('consignee_name'),
     consigneeGstin: text('consignee_gstin'),
     lrNo: text('lr_no'),

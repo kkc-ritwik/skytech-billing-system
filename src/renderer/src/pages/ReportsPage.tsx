@@ -15,13 +15,14 @@ import { Table, THead, TBody, TR, TH, TD } from '@renderer/components/ui/table'
 
 interface Pnl { revenue: number; cogs: number; grossProfit: number; marginBps: number }
 interface Gstr3b { invoices: number; taxableValue: number; igst: number; cgst: number; sgst: number; cess: number; totalTax: number }
-type Tab = 'receivables' | 'reminders' | 'sales' | 'pnl' | 'gst' | 'gstr3b' | 'hsn'
+type Tab = 'receivables' | 'reminders' | 'sales' | 'salespersons' | 'pnl' | 'gst' | 'gstr3b' | 'hsn'
 
 const NO_RANGE: Tab[] = ['receivables', 'reminders']
 
 export function ReportsPage(): JSX.Element {
   const canFinancial = useApp((s) => s.has('reports:financial'))
   const [tab, setTab] = useState<Tab>('receivables')
+  const [sp, setSp] = useState<SpReport | null>(null)
   const [from, setFrom] = useState(() => startOfMonth(new Date()).toISOString().slice(0, 10))
   const [to, setTo] = useState(() => endOfMonth(new Date()).toISOString().slice(0, 10))
   const [data, setData] = useState<any[]>([])
@@ -41,6 +42,7 @@ export function ReportsPage(): JSX.Element {
       if (tab === 'receivables') setData(await invoke<any[]>('reports:receivables'))
       else if (tab === 'reminders') setData(await invoke<any[]>('reports:overdue'))
       else if (tab === 'sales') setData(await invoke<any[]>('reports:salesRegister', range()))
+      else if (tab === 'salespersons') setSp(await invoke<SpReport>('reports:salespersons', range()))
       else if (tab === 'gst') setData(await invoke<any[]>('reports:gst', range()))
       else if (tab === 'hsn') setData(await invoke<any[]>('reports:hsn', range()))
       else if (tab === 'pnl') setPnl(await invoke<Pnl>('reports:pnl', range()))
@@ -71,6 +73,7 @@ export function ReportsPage(): JSX.Element {
     { key: 'receivables', label: 'Receivables (Aging)', show: true },
     { key: 'reminders', label: 'Payment Reminders', show: true },
     { key: 'sales', label: 'Sales Register', show: true },
+    { key: 'salespersons', label: 'Salesperson Sales', show: true },
     { key: 'pnl', label: 'Profit & Loss', show: canFinancial },
     { key: 'gst', label: 'GST Summary', show: canFinancial },
     { key: 'gstr3b', label: 'GSTR-3B', show: canFinancial },
@@ -111,6 +114,8 @@ export function ReportsPage(): JSX.Element {
         <PnlView pnl={pnl} />
       ) : tab === 'gstr3b' ? (
         <Gstr3bView g={g3b} />
+      ) : tab === 'salespersons' ? (
+        <SalespersonView r={sp} />
       ) : tab === 'reminders' ? (
         <Card><RemindersTable rows={data} /></Card>
       ) : tab === 'hsn' ? (
@@ -283,5 +288,113 @@ function GstTable({ rows }: { rows: any[] }): JSX.Element {
         ))}
       </TBody>
     </Table>
+  )
+}
+
+
+interface SpSummary {
+  salespersonId: string | null
+  salespersonName: string
+  invoiceCount: number
+  netSales: number
+  incentiveBps: number
+  incentiveAmount: number
+}
+interface SpBill {
+  id: string
+  number: string
+  issueDate: number
+  partyName: string
+  salespersonName: string
+  grandTotal: number
+}
+interface SpReport { summary: SpSummary[]; bills: SpBill[] }
+
+/**
+ * What each salesperson sold, with the bills behind it.
+ *
+ * Both halves are shown together because the shop pays incentive off the totals
+ * but wants to be able to check any figure against the actual bills before
+ * handing money over.
+ */
+function SalespersonView({ r }: { r: SpReport | null }): JSX.Element {
+  if (!r || r.summary.length === 0) {
+    return (
+      <Card>
+        <div className="py-20 text-center text-muted-foreground">
+          No sales in this period. Add salespersons under Masters and pick one at the
+          counter to start crediting sales.
+        </div>
+      </Card>
+    )
+  }
+  const anyIncentive = r.summary.some((s) => s.incentiveBps > 0)
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="border-b p-3 text-sm font-medium">Totals by salesperson</div>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Salesperson</TH>
+              <TH className="text-right">Bills</TH>
+              <TH className="text-right">Net sales</TH>
+              {anyIncentive && <TH className="text-right">Incentive %</TH>}
+              {anyIncentive && <TH className="text-right">Incentive</TH>}
+            </TR>
+          </THead>
+          <TBody>
+            {r.summary.map((s) => (
+              <TR key={s.salespersonId ?? 'none'}>
+                <TD className="font-medium">{s.salespersonName}</TD>
+                <TD className="text-right tabular-nums">{s.invoiceCount}</TD>
+                <TD className="text-right tabular-nums">{formatINR(s.netSales)}</TD>
+                {anyIncentive && (
+                  <TD className="text-right tabular-nums">
+                    {s.incentiveBps ? `${s.incentiveBps / 100}%` : '—'}
+                  </TD>
+                )}
+                {anyIncentive && (
+                  <TD className="text-right font-semibold tabular-nums">
+                    {s.incentiveBps ? formatINR(s.incentiveAmount) : '—'}
+                  </TD>
+                )}
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+        <p className="border-t p-3 text-xs text-muted-foreground">
+          Net sales are invoices less returns, so goods brought back are not paid on.
+        </p>
+      </Card>
+
+      <Card>
+        <div className="border-b p-3 text-sm font-medium">Bill by bill</div>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Date</TH>
+              <TH>Bill</TH>
+              <TH>Customer</TH>
+              <TH>Salesperson</TH>
+              <TH className="text-right">Amount</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {r.bills.map((b) => (
+              <TR key={b.id}>
+                <TD className="tabular-nums">{formatDate(b.issueDate)}</TD>
+                <TD className="font-mono text-xs">{b.number}</TD>
+                <TD>{b.partyName}</TD>
+                <TD>{b.salespersonName}</TD>
+                <TD className={b.grandTotal < 0 ? 'text-right tabular-nums text-destructive' : 'text-right tabular-nums'}>
+                  {formatINR(b.grandTotal)}
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      </Card>
+    </div>
   )
 }

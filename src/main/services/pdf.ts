@@ -92,6 +92,9 @@ async function buildModel(type: 'sales' | 'purchase', id: string): Promise<{ mod
     footerLines: Array.isArray(settings.receiptFooterLines)
       ? (settings.receiptFooterLines as unknown[]).map((l) => String(l).trim()).filter(Boolean).slice(0, 4)
       : [],
+    receiptWidthMm: Number(settings.receiptWidthMm ?? 79) || 79,
+    receiptShowLogo: settings.receiptShowLogo !== false,
+    receiptShowGstBreakup: settings.receiptShowGstBreakup !== false,
     lines,
     totals: {
       subTotal: doc.subTotal,
@@ -192,7 +195,49 @@ async function buildTextileModel(id: string): Promise<{ model: TextileModel; num
   return { model, number: doc.number }
 }
 
-/** Render to a PDF buffer. 'thermal' uses CSS @page sizing for a continuous roll. */
+/** CSS millimetres are a fixed 96 dpi, so this conversion is exact, not a guess. */
+const PX_PER_MM = 96 / 25.4
+/**
+ * printToPDF takes its page size in INCHES.
+ *
+ * Note this differs from webContents.print(), which takes microns — passing the
+ * wrong unit does not error, it silently produces a page seventy-two times too
+ * big, which is exactly what a receipt looked like before this was corrected.
+ */
+const MM_PER_INCH = 25.4
+
+/**
+ * Width and height of a continuous-roll receipt, in microns.
+ *
+ * The width comes from the document's own `@page` rule so a shop's roll setting
+ * is respected; the height is measured from what actually rendered, because the
+ * length of a bill is however long the shopping was. A little tail is added so
+ * the last line is never clipped by a rounding error.
+ */
+async function measuredRollSize(win: BrowserWindow): Promise<{ width: number; height: number }> {
+  const measured = (await win.webContents.executeJavaScript(`
+    (() => {
+      const rule = [...document.styleSheets]
+        .flatMap((s) => { try { return [...s.cssRules] } catch { return [] } })
+        .find((r) => r.constructor && r.constructor.name === 'CSSPageRule')
+      const declared = rule && rule.style && rule.style.size ? rule.style.size : ''
+      const w = /([\d.]+)mm/.exec(declared)
+      return {
+        widthMm: w ? Number(w[1]) : 79,
+        heightPx: Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight
+        )
+      }
+    })()
+  `)) as { widthMm: number; heightMm?: number; heightPx: number }
+
+  const widthMm = Math.max(40, Math.min(120, Number(measured.widthMm) || 79))
+  const heightMm = Math.max(40, Math.ceil(measured.heightPx / PX_PER_MM) + 4)
+  return { width: widthMm / MM_PER_INCH, height: heightMm / MM_PER_INCH }
+}
+
+/** Render to a PDF buffer. 'thermal' measures the roll so the width is real. */
 async function renderPdfBuffer(
   html: string,
   paperSize: 'A4' | 'A5' | 'thermal' | 'css'
@@ -211,10 +256,22 @@ async function renderPdfBuffer(
     await win.loadFile(tmp)
     // 'css' defers entirely to the document's own @page rule, which is how an
     // arbitrary label size in mm reaches the printer without being coerced to A4.
+    // Labels declare both dimensions, so the rule is honoured as written.
+    //
+    // A receipt cannot: its height depends on how many lines were bought, and a
+    // rule of `size: 79mm auto` is quietly discarded by Chromium — which is why
+    // counter bills were coming out on Letter paper. So measure the rendered
+    // content and hand the printer an explicit height instead.
     const data =
-      paperSize === 'thermal' || paperSize === 'css'
-        ? await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
-        : await win.webContents.printToPDF({ pageSize: paperSize, printBackground: true, margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } })
+      paperSize === 'thermal'
+        ? await win.webContents.printToPDF({
+            printBackground: true,
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+            pageSize: await measuredRollSize(win)
+          })
+        : paperSize === 'css'
+          ? await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
+          : await win.webContents.printToPDF({ pageSize: paperSize, printBackground: true, margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } })
     return data
   } finally {
     win.destroy()

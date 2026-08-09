@@ -4,6 +4,7 @@ import {
   dashboardStats,
   salesRegister,
   receivables,
+  salespersonSales,
   gstSummary,
   profitAndLoss,
   recentInvoices,
@@ -24,6 +25,12 @@ export function registerReportRoutes(): void {
     salesRegister(p.from, p.to)
   )
   route<void, unknown>('reports:receivables', 'reports:view', () => receivables())
+  // Who sold what, and the bills behind it. Gated on reports:view rather than
+  // reports:financial: a shop manager settling incentives needs it, and it
+  // exposes sales values the manager can already see on the sales register.
+  route<{ from: number; to: number }, unknown>('reports:salespersons', 'reports:view', (p) =>
+    salespersonSales(p.from, p.to)
+  )
   route<{ from: number; to: number }, unknown>('reports:gst', 'reports:financial', (p) =>
     gstSummary(p.from, p.to)
   )

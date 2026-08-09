@@ -81,6 +81,14 @@ export function PosPage(): JSX.Element {
   const [cust, setCust] = useState({ name: '', mobile: '', address: '', dob: '', anniversary: '' })
   /** The customer this mobile number already belongs to, if any. */
   const [custFound, setCustFound] = useState<PartyOpt | null>(null)
+  /** Walk-in who will not give a number: billed as a cash customer. */
+  const [custIsCash, setCustIsCash] = useState(false)
+  const [salespersons, setSalespersons] = useState<{ id: string; name: string }[]>([])
+  const [salespersonId, setSalespersonId] = useState('')
+  /** Money collected at the counter, split across however many modes were used. */
+  const [payOpen, setPayOpen] = useState(false)
+  const [tender, setTender] = useState({ cash: '', upi: '', card: '', other: '' })
+  const [cashGiven, setCashGiven] = useState('')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastAdded, setLastAdded] = useState<string | null>(null)
@@ -100,6 +108,11 @@ export function PosPage(): JSX.Element {
     void (async () => {
       try {
         const rows = await invoke<PartyOpt[]>('parties:list', { partyType: 'customer' })
+        try {
+          setSalespersons(await invoke<{ id: string; name: string }[]>('salespersons:list', { activeOnly: true }))
+        } catch {
+          /* a shop that keeps no salespeople simply sees an empty list */
+        }
         setParties(rows)
         if (rows.length && !partyId) setPartyId(rows[0].id)
       } catch {
@@ -225,6 +238,7 @@ export function PosPage(): JSX.Element {
   function openCustomer(): void {
     setCust({ name: '', mobile: '', address: '', dob: '', anniversary: '' })
     setCustFound(null)
+    setCustIsCash(false)
     setCustOpen(true)
   }
 
@@ -245,16 +259,21 @@ export function PosPage(): JSX.Element {
   }
 
   async function saveCustomer(): Promise<void> {
-    const name = cust.name.trim()
+    // A walk-in who will not leave a number still has to be billed, so a cash
+    // customer needs neither a mobile nor a name — the counter cannot hold up
+    // a queue over contact details it is never going to get.
+    const name = cust.name.trim() || (custIsCash ? 'Cash Customer' : '')
     const mobile = cust.mobile.trim()
     if (!name) return toast.error('Customer name is required.')
-    if (!mobile) return toast.error('Mobile number is required.')
+    if (!custIsCash && !mobile) {
+      return toast.error('Mobile number is required. Tick "Cash customer" for a walk-in.')
+    }
     setCustSaving(true)
     try {
       const res = await invoke<{ id: string }>('parties:save', {
         name,
         partyType: 'customer',
-        phone: mobile,
+        phone: mobile || null,
         billingAddressLine1: cust.address || null,
         dateOfBirth: cust.dob ? new Date(cust.dob).getTime() : null,
         anniversaryDate: cust.anniversary ? new Date(cust.anniversary).getTime() : null,
@@ -275,9 +294,38 @@ export function PosPage(): JSX.Element {
     }
   }
 
+  /** Money entered across the tender boxes, in paise. */
+  const tenderTotal =
+    toPaise(tender.cash || '0') +
+    toPaise(tender.upi || '0') +
+    toPaise(tender.card || '0') +
+    toPaise(tender.other || '0')
+
+  /**
+   * Change owed when more cash was handed over than the cash share of the bill.
+   * Optional by design: a counter that types nothing here simply sees nothing.
+   */
+  const cashReturn = Math.max(0, toPaise(cashGiven || '0') - toPaise(tender.cash || '0'))
+
+  /** Open the tender screen with the whole bill sitting in cash, the usual case. */
+  function openPayment(): void {
+    if (!partyId) return toast.error('Choose a customer first.')
+    if (!lines.length) return toast.error('Scan at least one item.')
+    setTender({ cash: String(toRupees(totals.grandTotal)), upi: '', card: '', other: '' })
+    setCashGiven('')
+    setPayOpen(true)
+  }
+
   async function checkout(): Promise<void> {
     if (!partyId) return toast.error('Choose a customer first.')
     if (!lines.length) return toast.error('Scan at least one item.')
+    // The counter takes the money in full before the goods leave, so the split
+    // must add up to the bill exactly — not less, and not more.
+    if (tenderTotal !== totals.grandTotal) {
+      return toast.error(
+        `Payment must add up to ${formatINR(totals.grandTotal)}. Entered so far: ${formatINR(tenderTotal)}.`
+      )
+    }
 
     setSaving(true)
     try {
@@ -292,6 +340,7 @@ export function PosPage(): JSX.Element {
         schemePct: Math.round(Number(schemePct || 0) * 100),
         transportName: null,
         caseNo: null,
+        salespersonId: salespersonId || null,
         weight: 0,
         freight: 0,
         dueDays: 0,
@@ -312,6 +361,40 @@ export function PosPage(): JSX.Element {
       const res = await invoke<{ id: string; number: string }>('sales:save', payload)
       toast.success(`Invoice ${res.number} saved.`)
 
+      // Record the money exactly as it was taken — one entry per mode used, each
+      // applied to this bill, so a split payment shows both halves in the books
+      // rather than one lump under a mode that was only part of it.
+      const modes: { key: keyof typeof tender; mode: string }[] = [
+        { key: 'cash', mode: 'cash' },
+        { key: 'upi', mode: 'upi' },
+        { key: 'card', mode: 'card' },
+        { key: 'other', mode: 'other' }
+      ]
+      for (const m of modes) {
+        const amount = toPaise(tender[m.key] || '0')
+        if (amount <= 0) continue
+        try {
+          await invoke('payments:record', {
+            direction: 'inbound',
+            partyId,
+            amount,
+            paidAt: Date.now(),
+            mode: m.mode,
+            referenceNo: null,
+            bankAccount: null,
+            notes: null,
+            cashDiscount: 0,
+            allocations: [{ refType: 'sales', documentId: res.id, amount }]
+          })
+        } catch (err) {
+          toast.error(
+            `Invoice ${res.number} saved, but the ${m.mode} payment was not recorded: ` +
+              (err instanceof ApiError ? err.message : 'unknown error')
+          )
+        }
+      }
+      setPayOpen(false)
+
       // Offer the printed bill straight away — the counter's next action.
       try {
         await invoke('documents:pdf', { type: 'sales', id: res.id, format: 'a4' })
@@ -320,6 +403,9 @@ export function PosPage(): JSX.Element {
       }
 
       setLines([])
+      setTender({ cash: '', upi: '', card: '', other: '' })
+      setCashGiven('')
+      setSalespersonId('')
       refocus()
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not save the invoice.')
@@ -492,6 +578,18 @@ export function PosPage(): JSX.Element {
                 </option>
               ))}
             </Select>
+            {salespersons.length > 0 && (
+              <div className="mt-2">
+                <Label htmlFor="sp">Sold by</Label>
+                <Select id="sp" value={salespersonId} onChange={(e) => setSalespersonId(e.target.value)}>
+                  <option value="">— not recorded —</option>
+                  {salespersons.map((sp) => (
+                    <option key={sp.id} value={sp.id}>{sp.name}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
+
             {party && !party.billingStateCode ? (
               // Never quietly assume intra-state: the wrong choice puts the
               // wrong tax on the bill and is invisible until filing.
@@ -550,9 +648,9 @@ export function PosPage(): JSX.Element {
             </div>
           </div>
 
-          <Button className="mt-2 h-12 text-base" disabled={saving || !lines.length} onClick={() => void checkout()}>
+          <Button className="mt-2 h-12 text-base" disabled={saving || !lines.length} onClick={openPayment}>
             {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Receipt className="mr-2 size-4" />}
-            Save &amp; print bill
+            Take payment &amp; print bill
           </Button>
           {lines.length > 0 && (
             <Button variant="ghost" size="sm" onClick={() => setLines([])}>
@@ -561,6 +659,79 @@ export function PosPage(): JSX.Element {
           )}
         </Card>
       </div>
+
+      <Dialog
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        title="Take payment"
+        description="Split it across as many modes as the customer used. The total must match the bill."
+        footer={
+          <div className="flex w-full items-center gap-3">
+            <div className="text-sm">
+              <span className="text-muted-foreground">Entered </span>
+              <b className={tenderTotal === totals.grandTotal ? 'text-emerald-600' : 'text-destructive'}>
+                {formatINR(tenderTotal)}
+              </b>
+              <span className="text-muted-foreground"> of {formatINR(totals.grandTotal)}</span>
+              {tenderTotal !== totals.grandTotal && (
+                <span className="ml-2 text-destructive">
+                  ({tenderTotal < totals.grandTotal ? 'short by ' : 'over by '}
+                  {formatINR(Math.abs(totals.grandTotal - tenderTotal))})
+                </span>
+              )}
+            </div>
+            <div className="ml-auto flex gap-2">
+              <Button variant="outline" onClick={() => setPayOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => void checkout()}
+                disabled={saving || tenderTotal !== totals.grandTotal}
+              >
+                {saving && <Loader2 className="animate-spin" />} Save &amp; print bill
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="tcash">Cash (₹)</Label>
+            <Input id="tcash" className="text-right tabular-nums" value={tender.cash}
+              onChange={(e) => setTender((t) => ({ ...t, cash: e.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tupi">UPI (₹)</Label>
+            <Input id="tupi" className="text-right tabular-nums" value={tender.upi}
+              onChange={(e) => setTender((t) => ({ ...t, upi: e.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tcard">Card (₹)</Label>
+            <Input id="tcard" className="text-right tabular-nums" value={tender.card}
+              onChange={(e) => setTender((t) => ({ ...t, card: e.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="toth">Other (₹)</Label>
+            <Input id="toth" className="text-right tabular-nums" value={tender.other}
+              onChange={(e) => setTender((t) => ({ ...t, other: e.target.value }))} />
+          </div>
+
+          <div className="col-span-2 rounded-md border p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="tgiven">Cash handed over (₹) — optional</Label>
+                <Input id="tgiven" className="text-right tabular-nums" value={cashGiven}
+                  onChange={(e) => setCashGiven(e.target.value)} placeholder="2000" />
+              </div>
+              <div className="flex flex-col justify-end">
+                <div className="text-sm text-muted-foreground">Return to customer</div>
+                <div className="text-2xl font-semibold tabular-nums">{formatINR(cashReturn)}</div>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Only for working out change at the till. The bill still records {formatINR(toPaise(tender.cash || '0'))} as cash.
+            </p>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog
         open={custOpen}
@@ -578,7 +749,7 @@ export function PosPage(): JSX.Element {
       >
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="cmob">Mobile no *</Label>
+            <Label htmlFor="cmob">Mobile no {custIsCash ? '' : '*'}</Label>
             <Input
               id="cmob"
               value={cust.mobile}
@@ -588,9 +759,22 @@ export function PosPage(): JSX.Element {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="cname">Name *</Label>
+            <Label htmlFor="cname">Name {custIsCash ? '' : '*'}</Label>
             <Input id="cname" value={cust.name} onChange={(e) => setCust((c) => ({ ...c, name: e.target.value }))} />
           </div>
+
+          <label className="col-span-2 flex items-center gap-2 rounded-md border p-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4"
+              checked={custIsCash}
+              onChange={(e) => setCustIsCash(e.target.checked)}
+            />
+            <span>
+              <b>Cash customer</b> — walk-in who will not give a number. Mobile and name
+              both become optional.
+            </span>
+          </label>
 
           {custFound && (
             <div className="col-span-2 flex items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">

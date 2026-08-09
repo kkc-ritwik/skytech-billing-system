@@ -29,6 +29,12 @@ export interface PdfModel {
   party: Record<string, any> | null
   /** Shop's own closing lines on a retail receipt, e.g. exchange policy. */
   footerLines?: string[]
+  /** Roll width in millimetres. 79 is the common default; 58 and 80 also exist. */
+  receiptWidthMm?: number
+  /** Print the shop's uploaded logo at the top of the receipt. */
+  receiptShowLogo?: boolean
+  /** Print the tax total broken down by GST rate at the foot of the receipt. */
+  receiptShowGstBreakup?: boolean
   lines: PdfLine[]
   totals: {
     subTotal: number
@@ -152,10 +158,44 @@ export function renderThermalHtml(m: PdfModel): string {
     ? `<div class="row"><span>IGST</span><span>${formatINR(m.totals.igstTotal)}</span></div>`
     : `<div class="row"><span>CGST</span><span>${formatINR(m.totals.cgstTotal)}</span></div><div class="row"><span>SGST</span><span>${formatINR(m.totals.sgstTotal)}</span></div>`
 
+  /**
+   * Tax at the foot of the bill, one line per GST rate.
+   *
+   * Everything charged at 5% is added together, everything at 12% likewise, and
+   * so on — which is how a shopkeeper reads a bill and how the figure has to be
+   * reported. Split into CGST and SGST within the state, IGST outside it.
+   */
+  const gstGroups = new Map<number, { taxable: number; tax: number }>()
+  for (const l of m.lines) {
+    const rate = l.taxRateBps ?? 0
+    if (!rate) continue
+    const g = gstGroups.get(rate) ?? { taxable: 0, tax: 0 }
+    g.taxable += l.taxableValue ?? 0
+    g.tax += (l.cgstAmount ?? 0) + (l.sgstAmount ?? 0) + (l.igstAmount ?? 0)
+    gstGroups.set(rate, g)
+  }
+  const gstBreakup =
+    m.receiptShowGstBreakup !== false && gstGroups.size > 0
+      ? `<div class="hr"></div><div class="b">GST breakup</div>` +
+        [...gstGroups.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([rate, g]) =>
+            m.isInterState
+              ? `<div class="row"><span>IGST ${pct(rate)} on ${formatINR(g.taxable)}</span><span>${formatINR(g.tax)}</span></div>`
+              : `<div class="row"><span>CGST+SGST ${pct(rate)} on ${formatINR(g.taxable)}</span><span>${formatINR(g.tax)}</span></div>`
+          )
+          .join('')
+      : ''
+
+  // 79 mm is what the shop runs, but the roll is a setting so a different
+  // printer needs no code change. Content sits inside a 6 mm margin.
+  const wMm = Math.max(40, Math.min(120, m.receiptWidthMm ?? 79))
+
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-    @page { size: 76mm auto; margin: 0; }
+    @page { size: ${wMm}mm auto; margin: 0; }
     * { box-sizing: border-box; }
-    body { width: 76mm; margin: 0; padding: 4mm 3mm; font-family: 'Consolas','Courier New',monospace; font-size: 11px; color: #000; }
+    body { width: ${wMm}mm; margin: 0; padding: 4mm 3mm; font-family: 'Consolas','Courier New',monospace; font-size: 11px; color: #000; }
+    .logo { display:block; margin:0 auto 4px; max-width: ${wMm - 14}mm; max-height: 18mm; }
     .c { text-align: center; }
     .b { font-weight: 700; }
     .lg { font-size: 14px; }
@@ -167,6 +207,7 @@ export function renderThermalHtml(m: PdfModel): string {
     .tot { font-size: 13px; font-weight: 700; }
     img { display: block; margin: 4px auto 0; }
   </style></head><body>
+    ${m.receiptShowLogo !== false && m.logoDataUrl ? `<img class="logo" src="${m.logoDataUrl}"/>` : ''}
     <div class="c b lg">${esc(c.tradeName || c.legalName || 'Your Company')}</div>
     ${[c.addressLine1, c.city].filter(Boolean).length ? `<div class="c">${esc([c.addressLine1, c.city].filter(Boolean).join(', '))}</div>` : ''}
     ${c.phone ? `<div class="c">Ph: ${esc(c.phone)}</div>` : ''}
@@ -186,6 +227,7 @@ export function renderThermalHtml(m: PdfModel): string {
     ${m.totals.roundOff ? `<div class="row"><span>Round off</span><span>${formatINR(m.totals.roundOff)}</span></div>` : ''}
     <div class="hr"></div>
     <div class="row tot"><span>TOTAL</span><span>${formatINR(m.totals.grandTotal)}</span></div>
+    ${gstBreakup}
     <div class="hr"></div>
     ${m.upiQrDataUrl ? `<img src="${m.upiQrDataUrl}" width="120" height="120"/><div class="c">Scan to pay (UPI)</div>` : c.upiId ? `<div class="c">UPI: ${esc(c.upiId)}</div>` : ''}
     <div class="c" style="margin-top:6px">${esc(amountInWordsINR(m.totals.grandTotal))}</div>
