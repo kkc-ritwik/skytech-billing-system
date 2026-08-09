@@ -15,6 +15,7 @@ import {
 import { labelRequestSchema, MAX_LABELS_PER_JOB } from '@shared/dto'
 import { exportBarcodeLabels, printBarcodeLabels } from '../services/pdf'
 import { listPrinters, type PrinterInfo } from '../services/printing'
+import { audit } from '../services/audit'
 import { getDb } from '../db/client'
 
 export function registerBarcodeRoutes(): void {
@@ -45,7 +46,20 @@ export function registerBarcodeRoutes(): void {
   route<{ itemIds: string[] }, { assigned: { id: string; name: string; barcode: string }[] }>(
     'barcode:ensureFor',
     'items:manage',
-    async (p, ctx) => ({ assigned: await ensureBarcodes(getDb(), p?.itemIds ?? [], ctx.user) })
+    async (p, ctx) => {
+      // Not inside a transaction here, so the audit is safe to write directly.
+      const assigned = await ensureBarcodes(getDb(), p?.itemIds ?? [])
+      if (assigned.length) {
+        await audit({
+          userId: ctx.user.id,
+          username: ctx.user.username,
+          action: 'item.barcode.auto_generate',
+          entityType: 'item',
+          details: { count: assigned.length, items: assigned.map((a) => a.name).slice(0, 20) }
+        })
+      }
+      return { assigned }
+    }
   )
 
   route<undefined, { assigned: { id: string; sku: string; name: string; barcode: string }[] }>(

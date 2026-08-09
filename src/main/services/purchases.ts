@@ -249,7 +249,7 @@ export async function savePurchaseDoc(
     // than making the shop stop and run a separate step before it can print.
     const barcoded =
       d.docType === 'grn'
-        ? await ensureBarcodes(tx, d.lines.map((l) => l.itemId).filter((x): x is string => !!x), user)
+        ? await ensureBarcodes(tx, d.lines.map((l) => l.itemId).filter((x): x is string => !!x))
         : []
 
     return { id: docId, number, barcodesAssigned: barcoded.length }
@@ -258,6 +258,18 @@ export async function savePurchaseDoc(
   // Audit AFTER commit — it uses the base connection and would otherwise
   // collide with the open interactive transaction (SQLITE_BUSY).
   await audit({ userId: user.id, username: user.username, action: `purchase.${d.docType}.save`, entityType: 'purchase', entityId: result.id })
+  // Barcodes created for goods that arrived without one. Recorded here, after
+  // the commit, for the same reason as above.
+  if (result.barcodesAssigned) {
+    await audit({
+      userId: user.id,
+      username: user.username,
+      action: 'item.barcode.auto_generate',
+      entityType: 'item',
+      entityId: result.id,
+      details: { count: result.barcodesAssigned }
+    })
+  }
   return result
 }
 

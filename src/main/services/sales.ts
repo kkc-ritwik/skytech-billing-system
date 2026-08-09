@@ -51,15 +51,24 @@ async function assertStockAvailable(
     if (l.itemId) requested.set(l.itemId, (requested.get(l.itemId) ?? 0) + l.quantity)
   }
 
+  // One grouped query for every item at once, rather than a query per item in a
+  // loop. Reading row by row inside the surrounding transaction left a statement
+  // open and the commit then failed with "SQL statements in progress" — the sale
+  // was refused for a reason that had nothing to do with stock.
+  const sums = await tx
+    .select({
+      itemId: stockLedger.itemId,
+      sum: sql<number>`coalesce(sum(${stockLedger.qtyDelta}), 0)`
+    })
+    .from(stockLedger)
+    .where(inArray(stockLedger.itemId, ids))
+    .groupBy(stockLedger.itemId)
+  const onHand = new Map(sums.map((r) => [r.itemId, Number(r.sum ?? 0)]))
+
   for (const [itemId, qty] of requested) {
     const meta = itemMap.get(itemId)
     if (!meta || !meta.track) continue
-    const agg = await tx
-      .select({ sum: sql<number>`coalesce(sum(${stockLedger.qtyDelta}), 0)` })
-      .from(stockLedger)
-      .where(eq(stockLedger.itemId, itemId))
-      .get()
-    const available = Number(agg?.sum ?? 0)
+    const available = onHand.get(itemId) ?? 0
     if (available < qty) {
       throw Object.assign(
         new Error(

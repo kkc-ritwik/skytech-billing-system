@@ -92,8 +92,7 @@ export async function generateBarcodeFor(itemId: string, user: AuthUser): Promis
  */
 export async function ensureBarcodes(
   db: DbOrTx,
-  itemIds: string[],
-  user: AuthUser
+  itemIds: string[]
 ): Promise<{ id: string; name: string; barcode: string }[]> {
   const ids = [...new Set(itemIds.filter(Boolean))]
   if (!ids.length) return []
@@ -116,13 +115,11 @@ export async function ensureBarcodes(
     assigned.push({ id: r.id, name: r.name, barcode })
   }
 
-  await audit({
-    userId: user.id,
-    username: user.username,
-    action: 'item.barcode.auto_generate',
-    entityType: 'item',
-    details: { count: assigned.length, items: assigned.map((a) => a.name).slice(0, 20) }
-  })
+  // Deliberately NOT audited here. `audit()` writes on the base connection, and
+  // doing that while the caller's transaction is still open leaves a statement
+  // in progress — the commit then fails with SQLITE_BUSY and the whole purchase
+  // is lost for a reason that has nothing to do with barcodes. The caller
+  // records it after the commit instead.
   return assigned
 }
 
