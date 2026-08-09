@@ -19,9 +19,19 @@ function paymentStatusFor(grandTotal: number, paid: number): string {
   return 'partial'
 }
 
-async function applyToSales(tx: DbOrTx, documentId: string, delta: number): Promise<void> {
+async function applyToSales(tx: DbOrTx, documentId: string, delta: number, partyId: string): Promise<void> {
   const doc = await tx.select().from(salesDocuments).where(eq(salesDocuments.id, documentId)).get()
   if (!doc) throw Object.assign(new Error('Invoice not found for allocation.'), { code: 'NOT_FOUND' })
+  // Money belongs to whoever handed it over. Settling one customer's bill with
+  // another customer's receipt corrupts both ledgers — the payer looks unpaid
+  // and the other looks settled — and neither is visible until someone chases
+  // the wrong person.
+  if (doc.partyId !== partyId) {
+    throw Object.assign(
+      new Error(`Invoice ${doc.number} belongs to a different customer and cannot be settled by this receipt.`),
+      { code: 'VALIDATION' }
+    )
+  }
   const paid = doc.paidAmount + delta
   await tx
     .update(salesDocuments)
@@ -29,9 +39,15 @@ async function applyToSales(tx: DbOrTx, documentId: string, delta: number): Prom
     .where(eq(salesDocuments.id, documentId))
 }
 
-async function applyToPurchase(tx: DbOrTx, documentId: string, delta: number): Promise<void> {
+async function applyToPurchase(tx: DbOrTx, documentId: string, delta: number, partyId: string): Promise<void> {
   const doc = await tx.select().from(purchaseDocuments).where(eq(purchaseDocuments.id, documentId)).get()
   if (!doc) throw Object.assign(new Error('Purchase not found for allocation.'), { code: 'NOT_FOUND' })
+  if (doc.partyId !== partyId) {
+    throw Object.assign(
+      new Error(`Purchase ${doc.number} belongs to a different vendor and cannot be settled by this payment.`),
+      { code: 'VALIDATION' }
+    )
+  }
   const paid = doc.paidAmount + delta
   await tx
     .update(purchaseDocuments)
@@ -80,8 +96,8 @@ export async function recordPayment(input: PaymentInput, user: AuthUser): Promis
         documentId: alloc.documentId,
         amount: alloc.amount
       })
-      if (alloc.refType === 'sales') await applyToSales(tx, alloc.documentId, alloc.amount)
-      else await applyToPurchase(tx, alloc.documentId, alloc.amount)
+      if (alloc.refType === 'sales') await applyToSales(tx, alloc.documentId, alloc.amount, d.partyId)
+      else await applyToPurchase(tx, alloc.documentId, alloc.amount, d.partyId)
     }
 
     return { id: row.id, number }

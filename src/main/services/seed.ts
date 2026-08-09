@@ -38,7 +38,10 @@ export async function seedDefaults(): Promise<void> {
     paperSize: 'A4',
     lowStockAlerts: true,
     defaultTaxInclusive: false,
-    preventNegativeStock: false
+    // Billing goods the shop does not have is how a stock report stops meaning
+    // anything, so a new install blocks it. Still switchable for the shops that
+    // genuinely sell ahead of delivery.
+    preventNegativeStock: true
   }
   for (const [key, value] of Object.entries(defaults)) {
     const row = await db.select({ key: settings.key }).from(settings).where(eq(settings.key, key)).get()
@@ -46,4 +49,30 @@ export async function seedDefaults(): Promise<void> {
       await db.insert(settings).values({ key, value: JSON.stringify(value), updatedAt: now })
     }
   }
+
+  /**
+   * Turn the stock guard on once for installs seeded before it was the default.
+   *
+   * Those shops were shipped with it off and have been billing stock they do
+   * not hold. Flipping it needs to happen exactly once: a shop that later turns
+   * it off on purpose must stay off, so a marker records that the correction
+   * has been applied and it is never reconsidered.
+   */
+  const marker = await db
+    .select({ key: settings.key })
+    .from(settings)
+    .where(eq(settings.key, NEG_STOCK_CORRECTION_KEY))
+    .get()
+  if (!marker) {
+    await db
+      .update(settings)
+      .set({ value: JSON.stringify(true), updatedAt: now })
+      .where(eq(settings.key, 'preventNegativeStock'))
+    await db
+      .insert(settings)
+      .values({ key: NEG_STOCK_CORRECTION_KEY, value: JSON.stringify(true), updatedAt: now })
+  }
 }
+
+/** Marks that the one-time negative-stock correction has already run. */
+const NEG_STOCK_CORRECTION_KEY = 'preventNegativeStockCorrectedAt'

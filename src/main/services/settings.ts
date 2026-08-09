@@ -123,7 +123,8 @@ const ALLOWED_SETTING_KEYS = new Set([
   // and 80 mm printers are both in the field.
   'receiptWidthMm',
   'receiptShowLogo',
-  'receiptShowGstBreakup'
+  'receiptShowGstBreakup',
+  'preventNegativeStockCorrectedAt'
 ])
 
 export async function setSettings(patch: Record<string, unknown>, user: AuthUser): Promise<void> {
