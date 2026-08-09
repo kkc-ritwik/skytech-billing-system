@@ -1,6 +1,6 @@
 # Shailee-GRMS — Pre-Production QA & Security Audit
 
-**Product:** Shailee-GRMS 0.1.0 — Garment Retail Management System
+**Product:** Shailee-GRMS 0.2.0 — Garment Retail Management System
 **Build tested:** production bundle, launched exactly as a client would
 **Starting state:** empty database — no account, company, items or licence
 **Method:** Chrome DevTools Protocol. Two independent passes:
@@ -8,6 +8,60 @@
  2. **Adversarial** — the IPC bridge attacked directly, bypassing the UI, as a
     determined user with DevTools open would do
 **Date:** 29 July 2026
+
+---
+
+## 0. Pre-ship audit, 9 August 2026
+
+Run against the packaged 0.2.0 installer before it goes to the shop, after the
+purchase, printing and counter work was added.
+
+| | |
+|---|---|
+| Fresh-install journey, virgin profile | **15 / 15** |
+| Adversarial checks on the new code | **14 / 14** |
+| Counter (POS) checks | **13 / 13** |
+| Sale-side checks | **13 / 13** |
+| Purchase and permission checks | **12 / 12** |
+| Repricing and stock checks | **9 / 9** |
+| Barcode label checks | **18 / 18** |
+| Screens opened in turn | 15, none blank, **0 console errors** |
+| Main-process error log | none written |
+| **Defects found** | **2 — both fixed and re-verified** |
+
+**0.1 Negative stock was still being billed on a new install — HIGH.**
+The guard's default was corrected in the code path that runs when no setting row
+exists, but first-run seeding writes that row explicitly as `false`, so the
+default never applied. The install a client actually receives shipped with the
+guard off. Demonstrated on a virgin profile of the packaged build: ten pieces in
+stock, an invoice for ninety-nine accepted, stock left at minus ninety-one.
+Fixed by seeding `true`, plus a one-time correction for installs already
+carrying `false`, marked so a shop that later turns it off on purpose stays off.
+Verified on a virgin profile and on a copy of a real 0.1.0 profile.
+
+*Why the earlier pass missed it:* every previous run used a QA profile that had
+been through Settings at some point. Only a genuinely virgin install exposes
+what a shop meets on day one — which is why that journey is now its own suite.
+
+**0.2 A receipt from one customer could settle another customer's bill — MEDIUM.**
+`payments:record` applied each allocation to whatever document id it was given
+without checking the document belonged to the party who paid. The payer keeps
+showing unpaid and gets chased; the other shows settled without paying. Not
+reachable through the screens, which only offer the selected party's bills, but
+open at the IPC bridge. Allocations are now refused unless the document belongs
+to the paying party, on both the sales and purchase sides.
+
+Two further faults were found and fixed while the counter receipt was being
+built, and are recorded here because they had been shipping silently:
+
+- **Every thermal receipt was printing on Letter paper, 216 mm wide.** A page
+  rule of `size: 79mm auto` is discarded by Chromium because the height is
+  `auto`. The roll is now measured from what rendered and given to the printer
+  explicitly. Measured on saved PDFs: 78.99 mm at the 79 mm setting, 58.25 mm at
+  58 mm.
+- **The receipt width setting did nothing.** It was read back out of the page
+  rule, which Chromium does not reliably expose, so it silently fell back to
+  79 mm. The width is now passed straight through and never parsed back.
 
 ---
 
