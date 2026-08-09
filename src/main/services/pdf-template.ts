@@ -27,6 +27,8 @@ export interface PdfModel {
   company: Record<string, any> | null
   logoDataUrl: string | null
   party: Record<string, any> | null
+  /** Shop's own closing lines on a retail receipt, e.g. exchange policy. */
+  footerLines?: string[]
   lines: PdfLine[]
   totals: {
     subTotal: number
@@ -188,7 +190,11 @@ export function renderThermalHtml(m: PdfModel): string {
     ${m.upiQrDataUrl ? `<img src="${m.upiQrDataUrl}" width="120" height="120"/><div class="c">Scan to pay (UPI)</div>` : c.upiId ? `<div class="c">UPI: ${esc(c.upiId)}</div>` : ''}
     <div class="c" style="margin-top:6px">${esc(amountInWordsINR(m.totals.grandTotal))}</div>
     <div class="hr"></div>
-    <div class="c">Thank you! Visit again.</div>
+    ${
+      m.footerLines && m.footerLines.length
+        ? m.footerLines.map((l) => `<div class="c">${esc(l)}</div>`).join('')
+        : '<div class="c">Thank you! Visit again.</div>'
+    }
     <div class="c" style="font-size:8px;color:#666;margin-top:4px">${esc(PRODUCT_NAME)}</div>
   </body></html>`
 }

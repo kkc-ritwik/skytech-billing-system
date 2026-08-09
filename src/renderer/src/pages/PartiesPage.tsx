@@ -50,6 +50,8 @@ type FormState = {
   billingPincode: string
   creditLimit: string
   creditDays: string
+  dateOfBirth: string
+  anniversaryDate: string
   openingBalance: string
   notes: string
   isActive: boolean
@@ -71,6 +73,8 @@ const blank = (type: 'customer' | 'vendor'): FormState => ({
   billingPincode: '',
   creditLimit: '',
   creditDays: '',
+  dateOfBirth: '',
+  anniversaryDate: '',
   openingBalance: '',
   notes: '',
   isActive: true
@@ -130,6 +134,8 @@ export function PartiesPage(): JSX.Element {
         billingPincode: p.billingPincode ?? '',
         creditLimit: String(toRupees(p.creditLimit ?? 0)),
         creditDays: String(p.creditDays ?? 0),
+        dateOfBirth: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().slice(0, 10) : '',
+        anniversaryDate: p.anniversaryDate ? new Date(p.anniversaryDate).toISOString().slice(0, 10) : '',
         openingBalance: String(toRupees(p.openingBalance ?? 0)),
         notes: p.notes ?? '',
         isActive: !!p.isActive
@@ -166,6 +172,8 @@ export function PartiesPage(): JSX.Element {
         shippingPincode: null,
         creditLimit: toPaise(form.creditLimit || '0'),
         creditDays: Number(form.creditDays || 0),
+        dateOfBirth: form.dateOfBirth ? new Date(form.dateOfBirth).getTime() : null,
+        anniversaryDate: form.anniversaryDate ? new Date(form.anniversaryDate).getTime() : null,
         openingBalance: toPaise(form.openingBalance || '0'),
         notes: form.notes || null,
         isActive: form.isActive
@@ -319,6 +327,8 @@ export function PartiesPage(): JSX.Element {
           <Field label="Credit limit (₹)"><Input type="number" step="0.01" value={form.creditLimit} onChange={up('creditLimit')} /></Field>
           <Field label="Credit days"><Input type="number" value={form.creditDays} onChange={up('creditDays')} /></Field>
           <Field label="Opening balance (₹)"><Input type="number" step="0.01" value={form.openingBalance} onChange={up('openingBalance')} /></Field>
+          <Field label="Date of birth"><Input type="date" value={form.dateOfBirth} onChange={up('dateOfBirth')} /></Field>
+          <Field label="Anniversary"><Input type="date" value={form.anniversaryDate} onChange={up('anniversaryDate')} /></Field>
           <label className="col-span-2 flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} className="size-4" /> Active
           </label>

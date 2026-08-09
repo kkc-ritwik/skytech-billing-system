@@ -87,6 +87,11 @@ async function buildModel(type: 'sales' | 'purchase', id: string): Promise<{ mod
     company: company ?? null,
     logoDataUrl,
     party: party ?? null,
+    // The shop's own closing lines on a retail receipt — exchange policy,
+    // festival greeting, whatever it wants the customer to take away.
+    footerLines: Array.isArray(settings.receiptFooterLines)
+      ? (settings.receiptFooterLines as unknown[]).map((l) => String(l).trim()).filter(Boolean).slice(0, 4)
+      : [],
     lines,
     totals: {
       subTotal: doc.subTotal,

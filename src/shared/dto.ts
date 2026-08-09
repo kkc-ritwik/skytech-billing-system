@@ -292,6 +292,9 @@ export const partyInputSchema = z.object({
   shippingPincode: z.string().trim().max(10).optional().nullable(),
   creditLimit: z.number().int().min(0),
   creditDays: z.number().int().min(0),
+  /** Birthday and wedding anniversary, for greetings. Both optional. */
+  dateOfBirth: z.number().optional().nullable(),
+  anniversaryDate: z.number().optional().nullable(),
   openingBalance: z.number().int(),
   notes: optionalText,
   isActive: z.boolean()
@@ -368,3 +371,19 @@ export const labelRequestSchema = z.object({
   sheet: labelSheetSchema
 })
 export type LabelRequestInput = z.infer<typeof labelRequestSchema>
+
+// ---------------------------------------------------------------------------
+// Salespersons — shop floor staff credited with a sale
+// ---------------------------------------------------------------------------
+
+export const salespersonInputSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1, 'Name is required').max(120),
+  phone: phoneField,
+  code: z.string().trim().max(30).optional().nullable(),
+  /** Incentive rate in basis points; 250 = 2.5%. */
+  incentiveBps: z.number().int().min(0).max(10000, 'Incentive cannot exceed 100%').default(0),
+  notes: z.string().trim().max(500).optional().nullable(),
+  isActive: z.boolean()
+})
+export type SalespersonInput = z.infer<typeof salespersonInputSchema>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, ScanLine, Trash2, Receipt, Plus, Minus, AlertTriangle } from 'lucide-react'
+import { Loader2, ScanLine, Trash2, Receipt, Plus, Minus, AlertTriangle, UserPlus } from 'lucide-react'
 import { invoke, ApiError } from '@renderer/lib/api'
 import { toast } from '@renderer/store/toast'
 import { useApp } from '@renderer/store/app'
@@ -14,6 +14,7 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Select } from '@renderer/components/ui/select'
 import { Table, THead, TBody, TR, TH, TD } from '@renderer/components/ui/table'
+import { Dialog } from '@renderer/components/ui/dialog'
 
 interface ScanResult {
   id: string
@@ -29,11 +30,18 @@ interface ScanResult {
   stockOnHand: number
 }
 
+/**
+ * GST slabs a garment shop actually uses. The line opens on the item's own
+ * rate; this list is only what the counter may switch it to.
+ */
+const GST_RATES = [0, 500, 1200, 1800, 2800] as const
+
 interface PartyOpt {
   id: string
   name: string
   gstin: string | null
   billingStateCode: string | null
+  phone?: string | null
 }
 
 interface CartLine {
@@ -68,14 +76,19 @@ export function PosPage(): JSX.Element {
   const [lines, setLines] = useState<CartLine[]>([])
   const [parties, setParties] = useState<PartyOpt[]>([])
   const [partyId, setPartyId] = useState('')
+  const [custOpen, setCustOpen] = useState(false)
+  const [custSaving, setCustSaving] = useState(false)
+  const [cust, setCust] = useState({ name: '', mobile: '', address: '', dob: '', anniversary: '' })
+  /** The customer this mobile number already belongs to, if any. */
+  const [custFound, setCustFound] = useState<PartyOpt | null>(null)
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastAdded, setLastAdded] = useState<string | null>(null)
 
   const [schemeLabel, setSchemeLabel] = useState('DISCOUNT')
   const [schemePct, setSchemePct] = useState('0')
-  const [transportName, setTransportName] = useState('')
-  const [caseNo, setCaseNo] = useState('')
+  // Transport and case number are wholesale dispatch details. A counter sale is
+  // handed over there and then, so the retail bill carries neither.
 
   const scanRef = useRef<HTMLInputElement>(null)
 
@@ -102,7 +115,6 @@ export function PosPage(): JSX.Element {
         setCompanyStateCode(ctx.companyStateCode)
         setSchemeLabel(ctx.defaultSchemeLabel)
         setSchemePct(String(ctx.defaultSchemePct / 100))
-        if (ctx.defaultTransportName) setTransportName(ctx.defaultTransportName)
       } catch (err) {
         // Without the state code we cannot tell IGST from CGST/SGST, so say so
         // rather than quietly billing the wrong tax.
@@ -192,6 +204,77 @@ export function PosPage(): JSX.Element {
     setLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, unitPrice: toPaise(rupees) } : l)))
   }
 
+  /**
+   * Change the GST rate for one line of this bill.
+   *
+   * The item's own rate is what gets offered, and this only overrides it for
+   * the bill being raised — the item master is left alone. A counter mistake
+   * must not silently re-rate a design for every future sale.
+   */
+  function setTax(itemId: string, bps: number): void {
+    setLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, taxRateBps: bps } : l)))
+  }
+
+  /**
+   * Quick-add a customer without leaving the counter.
+   *
+   * A shop takes a phone number and a name at the till; everything else is
+   * optional. The mobile number is looked up first — a regular who has bought
+   * before must be recognised, not entered a second time under a new record.
+   */
+  function openCustomer(): void {
+    setCust({ name: '', mobile: '', address: '', dob: '', anniversary: '' })
+    setCustFound(null)
+    setCustOpen(true)
+  }
+
+  async function lookupMobile(mobile: string): Promise<void> {
+    setCust((c) => ({ ...c, mobile }))
+    const digits = mobile.replace(/\D/g, '')
+    if (digits.length < 10) return setCustFound(null)
+    const hit = parties.find((p) => (p.phone ?? '').replace(/\D/g, '').endsWith(digits.slice(-10)))
+    setCustFound(hit ?? null)
+  }
+
+  /** Use the customer this mobile already belongs to, rather than duplicating them. */
+  function useExisting(): void {
+    if (!custFound) return
+    setPartyId(custFound.id)
+    setCustOpen(false)
+    toast.success(`${custFound.name} selected.`)
+  }
+
+  async function saveCustomer(): Promise<void> {
+    const name = cust.name.trim()
+    const mobile = cust.mobile.trim()
+    if (!name) return toast.error('Customer name is required.')
+    if (!mobile) return toast.error('Mobile number is required.')
+    setCustSaving(true)
+    try {
+      const res = await invoke<{ id: string }>('parties:save', {
+        name,
+        partyType: 'customer',
+        phone: mobile,
+        billingAddressLine1: cust.address || null,
+        dateOfBirth: cust.dob ? new Date(cust.dob).getTime() : null,
+        anniversaryDate: cust.anniversary ? new Date(cust.anniversary).getTime() : null,
+        creditLimit: 0,
+        creditDays: 0,
+        openingBalance: 0,
+        isActive: true
+      })
+      const rows = await invoke<PartyOpt[]>('parties:list', { partyType: 'customer' })
+      setParties(rows)
+      setPartyId(res.id)
+      setCustOpen(false)
+      toast.success(`${name} added.`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not add the customer.')
+    } finally {
+      setCustSaving(false)
+    }
+  }
+
   async function checkout(): Promise<void> {
     if (!partyId) return toast.error('Choose a customer first.')
     if (!lines.length) return toast.error('Scan at least one item.')
@@ -207,8 +290,8 @@ export function PosPage(): JSX.Element {
         extraDiscount: 0,
         schemeLabel: schemeLabel || null,
         schemePct: Math.round(Number(schemePct || 0) * 100),
-        transportName: transportName || null,
-        caseNo: caseNo || null,
+        transportName: null,
+        caseNo: null,
         weight: 0,
         freight: 0,
         dueDays: 0,
@@ -237,7 +320,6 @@ export function PosPage(): JSX.Element {
       }
 
       setLines([])
-      setCaseNo('')
       refocus()
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not save the invoice.')
@@ -311,6 +393,7 @@ export function PosPage(): JSX.Element {
                   <TH className="w-20 text-right">CUT</TH>
                   <TH className="w-24 text-right">MTS</TH>
                   <TH className="w-32 text-right">RATE</TH>
+                  <TH className="w-24 text-right">GST</TH>
                   <TH className="w-32 text-right">AMOUNT</TH>
                   <TH className="w-12" />
                 </TR>
@@ -364,6 +447,18 @@ export function PosPage(): JSX.Element {
                           onChange={(e) => setRate(l.itemId, e.target.value)}
                         />
                       </TD>
+                      <TD className="text-right">
+                        <Select
+                          aria-label={`GST rate for ${l.description}`}
+                          className="h-8 text-right"
+                          value={String(l.taxRateBps)}
+                          onChange={(e) => setTax(l.itemId, Number(e.target.value))}
+                        >
+                          {GST_RATES.map((b) => (
+                            <option key={b} value={b}>{b / 100}%</option>
+                          ))}
+                        </Select>
+                      </TD>
                       <TD className="text-right font-semibold tabular-nums">
                         {formatINR(l.quantity * l.unitPrice)}
                       </TD>
@@ -383,7 +478,12 @@ export function PosPage(): JSX.Element {
         {/* ---------------- bill summary ---------------- */}
         <Card className="flex h-fit flex-col gap-3 p-4">
           <div>
-            <Label htmlFor="cust">Customer</Label>
+            <div className="mb-1 flex items-center justify-between">
+              <Label htmlFor="cust">Customer</Label>
+              <Button variant="outline" size="sm" className="h-7" onClick={openCustomer}>
+                <UserPlus className="size-3" /> New
+              </Button>
+            </div>
             <Select id="cust" value={partyId} onChange={(e) => setPartyId(e.target.value)}>
               {parties.length === 0 && <option value="">No customers yet</option>}
               {parties.map((p) => (
@@ -425,16 +525,6 @@ export function PosPage(): JSX.Element {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label htmlFor="tr">Transport</Label>
-              <Input id="tr" value={transportName} onChange={(e) => setTransportName(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="cn">Case no</Label>
-              <Input id="cn" value={caseNo} onChange={(e) => setCaseNo(e.target.value)} />
-            </div>
-          </div>
 
           <div className="mt-1 space-y-1 border-t pt-3 text-sm">
             <Row label={`SUB TOTAL (${totalPcs} pcs, ${totalMts} mts)`} value={formatINR(totals.subTotal)} />
@@ -471,6 +561,61 @@ export function PosPage(): JSX.Element {
           )}
         </Card>
       </div>
+
+      <Dialog
+        open={custOpen}
+        onClose={() => setCustOpen(false)}
+        title="New customer"
+        description="Name and mobile number are enough. The rest can wait."
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="outline" onClick={() => setCustOpen(false)}>Cancel</Button>
+            <Button onClick={() => void saveCustomer()} disabled={custSaving}>
+              {custSaving && <Loader2 className="animate-spin" />} Save &amp; select
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="cmob">Mobile no *</Label>
+            <Input
+              id="cmob"
+              value={cust.mobile}
+              onChange={(e) => void lookupMobile(e.target.value)}
+              placeholder="10-digit number"
+              inputMode="numeric"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cname">Name *</Label>
+            <Input id="cname" value={cust.name} onChange={(e) => setCust((c) => ({ ...c, name: e.target.value }))} />
+          </div>
+
+          {custFound && (
+            <div className="col-span-2 flex items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              <span>
+                This mobile already belongs to <b>{custFound.name}</b>.
+              </span>
+              <Button size="sm" className="ml-auto" onClick={useExisting}>Use this customer</Button>
+            </div>
+          )}
+
+          <div className="col-span-2 space-y-1.5">
+            <Label htmlFor="caddr">Address</Label>
+            <Input id="caddr" value={cust.address} onChange={(e) => setCust((c) => ({ ...c, address: e.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cdob">Date of birth</Label>
+            <Input id="cdob" type="date" value={cust.dob} onChange={(e) => setCust((c) => ({ ...c, dob: e.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cann">Anniversary</Label>
+            <Input id="cann" type="date" value={cust.anniversary} onChange={(e) => setCust((c) => ({ ...c, anniversary: e.target.value }))} />
+          </div>
+        </div>
+      </Dialog>
     </div>
   )
 }

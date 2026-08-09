@@ -37,6 +37,13 @@ export const parties = sqliteTable(
     // Commercial terms
     creditLimit: integer('credit_limit').notNull().default(0), // paise; 0 = no limit
     creditDays: integer('credit_days').notNull().default(0),
+    /**
+     * Birthday and wedding anniversary, for the greeting and offer messages a
+     * saree shop sends its regulars. Both optional — most walk-in customers
+     * will not give them, and billing must never wait on it.
+     */
+    dateOfBirth: integer('date_of_birth', { mode: 'timestamp_ms' }),
+    anniversaryDate: integer('anniversary_date', { mode: 'timestamp_ms' }),
     // Opening balance: positive = party owes us (debit), negative = we owe them
     openingBalance: integer('opening_balance').notNull().default(0),
     openingBalanceAt: integer('opening_balance_at', { mode: 'timestamp_ms' }),

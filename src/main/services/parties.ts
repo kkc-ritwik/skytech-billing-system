@@ -38,6 +38,8 @@ export async function listParties(filter?: {
       billingStateCode: parties.billingStateCode,
       creditLimit: parties.creditLimit,
       creditDays: parties.creditDays,
+      dateOfBirth: parties.dateOfBirth,
+      anniversaryDate: parties.anniversaryDate,
       openingBalance: parties.openingBalance,
       isActive: parties.isActive
     })
@@ -79,6 +81,8 @@ export async function saveParty(input: PartyInput, user: AuthUser): Promise<stri
     shippingPincode: d.shippingPincode ?? null,
     creditLimit: d.creditLimit,
     creditDays: d.creditDays,
+    dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
+    anniversaryDate: d.anniversaryDate ? new Date(d.anniversaryDate) : null,
     notes: d.notes ?? null,
     isActive: d.isActive,
     updatedAt: now

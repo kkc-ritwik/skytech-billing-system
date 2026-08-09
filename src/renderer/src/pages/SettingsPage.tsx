@@ -31,6 +31,7 @@ export function SettingsPage(): JSX.Element {
     preventNegativeStock: boolean
     invoiceTemplate: string
     invoiceInvocation: string
+    receiptFooterLines: string[]
     defaultSchemeLabel: string
     defaultSchemePct: number
     defaultCutLength: number
@@ -40,6 +41,7 @@ export function SettingsPage(): JSX.Element {
     preventNegativeStock: true,
     invoiceTemplate: 'standard',
     invoiceInvocation: '',
+    receiptFooterLines: [],
     defaultSchemeLabel: 'DISCOUNT',
     defaultSchemePct: 0,
     defaultCutLength: 0,
@@ -69,6 +71,7 @@ export function SettingsPage(): JSX.Element {
           preventNegativeStock: s?.preventNegativeStock !== false,
           invoiceTemplate: (s?.invoiceTemplate as string) ?? 'standard',
           invoiceInvocation: (s?.invoiceInvocation as string) ?? '',
+          receiptFooterLines: Array.isArray(s?.receiptFooterLines) ? (s.receiptFooterLines as string[]) : [],
           defaultSchemeLabel: (s?.defaultSchemeLabel as string) ?? 'DISCOUNT',
           defaultSchemePct: (s?.defaultSchemePct as number) ?? 0,
           defaultCutLength: (s?.defaultCutLength as number) ?? 0,
@@ -295,6 +298,33 @@ export function SettingsPage(): JSX.Element {
                 Prevent negative stock — block an invoice if there isn't enough inventory
               </label>
             </div>
+
+            <div className="col-span-2 border-t pt-3 text-xs font-medium uppercase text-muted-foreground">
+              Counter receipt
+            </div>
+            <Field label="Footer lines printed at the bottom of the retail bill">
+              <textarea
+                className="min-h-[76px] w-full rounded-md border bg-background p-2 text-sm"
+                defaultValue={prefs.receiptFooterLines.join(String.fromCharCode(10))}
+                placeholder={['Goods once sold will not be taken back', 'Exchange within 7 days with bill', 'Thank you! Visit again'].join(String.fromCharCode(10))}
+                disabled={!canManage}
+                onBlur={(e) =>
+                  void savePrefs({
+                    // One line per row, blanks dropped, capped at four so a long
+                    // note cannot push the total off a short receipt.
+                    receiptFooterLines: e.target.value
+                      .split(String.fromCharCode(10))
+                      .map((l) => l.trim())
+                      .filter(Boolean)
+                      .slice(0, 4)
+                  })
+                }
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                One line per row, up to four. The shop name, address, phone and GSTIN
+                come from Company details and always print at the top.
+              </p>
+            </Field>
 
             {prefs.invoiceTemplate === 'textile' && (
               <>
