@@ -514,13 +514,12 @@ export function PosPage(): JSX.Element {
               <THead>
                 <TR>
                   <TH>Description</TH>
-                  <TH className="w-[88px] text-right">PCS</TH>
-                  {showCut && <TH className="w-[58px] text-right">CUT</TH>}
-                  {showCut && <TH className="w-[58px] text-right">MTS</TH>}
-                  <TH className="w-[92px] text-right">RATE</TH>
-                  <TH className="w-[90px] text-right">GST</TH>
-                  <TH className="w-[94px] text-right">AMOUNT</TH>
-                  <TH className="w-[38px]" />
+                  <TH className="w-[84px] text-right">PCS</TH>
+                  {showCut && <TH className="w-[52px] text-right">CUT</TH>}
+                  <TH className="w-[88px] text-right">RATE</TH>
+                  <TH className="w-[84px] text-right">GST</TH>
+                  <TH className="w-[92px] text-right">AMOUNT</TH>
+                  <TH className="w-[36px]" />
                 </TR>
               </THead>
               <TBody>
@@ -565,11 +564,6 @@ export function PosPage(): JSX.Element {
                       </TD>
                       {showCut && (
                         <TD className="text-right tabular-nums">{l.cutLength ? l.cutLength.toFixed(2) : '—'}</TD>
-                      )}
-                      {showCut && (
-                        <TD className="text-right tabular-nums">
-                          {l.cutLength ? (l.quantity * l.cutLength).toFixed(2) : '—'}
-                        </TD>
                       )}
                       <TD className="text-right">
                         <Input
