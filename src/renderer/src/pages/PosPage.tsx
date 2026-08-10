@@ -23,6 +23,7 @@ interface ScanResult {
   barcode: string | null
   hsnCode: string | null
   sellingPrice: number
+  sellingPriceIsInclusive: boolean
   taxRateBps: number
   cutLength: number
   packing: string | null
@@ -44,6 +45,20 @@ interface PartyOpt {
   phone?: string | null
 }
 
+/**
+ * The rate GST is actually charged on.
+ *
+ * A saree priced at 3750 "inclusive of tax" already has the GST inside it: the
+ * customer pays 3750 and nothing more. Charging 5% on top would hand them a
+ * bill for 3938 for goods the sticker says cost 3750. So for an inclusive
+ * price the tax is taken OUT — 3750 becomes 3571.43 taxable plus 178.57 GST,
+ * which adds back to exactly 3750.
+ */
+function taxableRate(unitPrice: number, taxRateBps: number, inclusive: boolean): number {
+  if (!inclusive || taxRateBps <= 0) return unitPrice
+  return Math.round((unitPrice * 10000) / (10000 + taxRateBps))
+}
+
 interface CartLine {
   itemId: string
   sku: string
@@ -53,6 +68,17 @@ interface CartLine {
   quantity: number
   cutLength: number
   unitPrice: number // paise, per piece
+  /**
+   * Exactly what the counter typed in the rate box.
+   *
+   * The displayed value must not be re-derived from `unitPrice` on every
+   * keystroke: doing that erased a decimal point the moment it was typed and
+   * refused to let the box be emptied, which made the rate look impossible to
+   * edit. The text is what shows; the paise are what the bill uses.
+   */
+  rateText: string
+  /** The MRP already contains GST, so tax is taken out rather than added on. */
+  priceIsInclusive: boolean
   taxRateBps: number
   stockOnHand: number
   trackInventory: boolean
@@ -138,6 +164,13 @@ export function PosPage(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * Show the cut/metres columns only when something in the cart is sold by the
+   * metre. A retail counter selling pieces had two columns of dashes crowding
+   * the rate box down to a few pixels wide.
+   */
+  const showCut = lines.some((l) => l.cutLength > 0)
+
   const party = parties.find((p) => p.id === partyId) ?? null
   const isInterState = !!(party?.billingStateCode && companyStateCode && party.billingStateCode !== companyStateCode)
 
@@ -146,7 +179,7 @@ export function PosPage(): JSX.Element {
       computeDocument(
         lines.map((l) => ({
           quantity: l.quantity,
-          unitPrice: l.unitPrice,
+          unitPrice: taxableRate(l.unitPrice, l.taxRateBps, l.priceIsInclusive),
           taxRateBps: l.taxRateBps,
           cutLength: l.cutLength
         })),
@@ -191,6 +224,8 @@ export function PosPage(): JSX.Element {
             quantity: 1,
             cutLength: found.cutLength,
             unitPrice: found.sellingPrice,
+            rateText: String(toRupees(found.sellingPrice)),
+            priceIsInclusive: !!found.sellingPriceIsInclusive,
             taxRateBps: found.taxRateBps,
             stockOnHand: found.stockOnHand,
             trackInventory: found.trackInventory
@@ -214,7 +249,9 @@ export function PosPage(): JSX.Element {
   }
 
   function setRate(itemId: string, rupees: string): void {
-    setLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, unitPrice: toPaise(rupees) } : l)))
+    setLines((prev) =>
+      prev.map((l) => (l.itemId === itemId ? { ...l, rateText: rupees, unitPrice: toPaise(rupees) } : l))
+    )
   }
 
   /**
@@ -351,7 +388,9 @@ export function PosPage(): JSX.Element {
           quantity: l.quantity,
           cutLength: l.cutLength,
           packing: l.packing,
-          unitPrice: l.unitPrice,
+          // Same conversion as the on-screen total, so the saved bill and the
+          // figure the customer was quoted are the same number.
+          unitPrice: taxableRate(l.unitPrice, l.taxRateBps, l.priceIsInclusive),
           discountPct: 0,
           discountAmount: 0,
           taxRateBps: l.taxRateBps
@@ -432,7 +471,7 @@ export function PosPage(): JSX.Element {
         subtitle="Scan a barcode to add pieces. The scanner types into the box below — keep it focused."
       />
 
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
         {/* ---------------- cart ---------------- */}
         <div className="flex flex-col gap-4">
           <Card className="p-4">
@@ -471,17 +510,17 @@ export function PosPage(): JSX.Element {
           </Card>
 
           <Card className="flex-1 overflow-auto p-0">
-            <Table>
+            <Table className="table-fixed">
               <THead>
                 <TR>
                   <TH>Description</TH>
-                  <TH className="w-28 text-right">PCS</TH>
-                  <TH className="w-20 text-right">CUT</TH>
-                  <TH className="w-24 text-right">MTS</TH>
-                  <TH className="w-32 text-right">RATE</TH>
-                  <TH className="w-24 text-right">GST</TH>
-                  <TH className="w-32 text-right">AMOUNT</TH>
-                  <TH className="w-12" />
+                  <TH className="w-[88px] text-right">PCS</TH>
+                  {showCut && <TH className="w-[58px] text-right">CUT</TH>}
+                  {showCut && <TH className="w-[58px] text-right">MTS</TH>}
+                  <TH className="w-[92px] text-right">RATE</TH>
+                  <TH className="w-[90px] text-right">GST</TH>
+                  <TH className="w-[94px] text-right">AMOUNT</TH>
+                  <TH className="w-[38px]" />
                 </TR>
               </THead>
               <TBody>
@@ -500,8 +539,10 @@ export function PosPage(): JSX.Element {
                       className={lastAdded === l.itemId ? 'bg-primary/10 transition-colors' : undefined}
                     >
                       <TD>
-                        <div className="font-medium">{l.description}</div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="line-clamp-2 font-medium leading-tight" title={l.description}>
+                          {l.description}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
                           {l.sku}
                           {short && (
                             <span className="ml-2 inline-flex items-center gap-1 text-amber-600">
@@ -522,21 +563,29 @@ export function PosPage(): JSX.Element {
                           </Button>
                         </div>
                       </TD>
-                      <TD className="text-right tabular-nums">{l.cutLength ? l.cutLength.toFixed(2) : '—'}</TD>
-                      <TD className="text-right tabular-nums">
-                        {l.cutLength ? (l.quantity * l.cutLength).toFixed(2) : '—'}
-                      </TD>
+                      {showCut && (
+                        <TD className="text-right tabular-nums">{l.cutLength ? l.cutLength.toFixed(2) : '—'}</TD>
+                      )}
+                      {showCut && (
+                        <TD className="text-right tabular-nums">
+                          {l.cutLength ? (l.quantity * l.cutLength).toFixed(2) : '—'}
+                        </TD>
+                      )}
                       <TD className="text-right">
                         <Input
                           className="h-8 text-right tabular-nums"
-                          value={toRupees(l.unitPrice)}
+                          value={l.rateText}
                           onChange={(e) => setRate(l.itemId, e.target.value)}
+                          onBlur={(e) =>
+                            // Tidy up once they leave the box, never while typing.
+                            setRate(l.itemId, e.target.value.trim() === '' ? '0' : String(toRupees(toPaise(e.target.value))))
+                          }
                         />
                       </TD>
                       <TD className="text-right">
                         <Select
                           aria-label={`GST rate for ${l.description}`}
-                          className="h-8 text-right"
+                          className="h-8 px-1 text-right"
                           value={String(l.taxRateBps)}
                           onChange={(e) => setTax(l.itemId, Number(e.target.value))}
                         >

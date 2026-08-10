@@ -935,7 +935,10 @@ function ItemSearch({
         }}
       />
       {open && matches.length > 0 && (
-        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-popover shadow-md">
+        // bg-card, not bg-popover: this theme never defines a popover colour, so
+        // that class gave the list no background at all and the form showed
+        // straight through the search results — unreadable on screen.
+        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-card text-foreground shadow-lg">
           {matches.map((it) => (
             <button
               key={it.id}
