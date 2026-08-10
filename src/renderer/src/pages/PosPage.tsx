@@ -128,7 +128,24 @@ export function PosPage(): JSX.Element {
 
   // Keep focus in the scan box: a scanner types wherever the caret happens to
   // be, so losing focus silently sends barcodes into some other field.
-  const refocus = useCallback(() => scanRef.current?.focus(), [])
+  /**
+   * Put the cursor back in the scan box.
+   *
+   * The counter wants the scanner to work without clicking first, so the box
+   * pulls focus back whenever it is lost. That must never fight the operator:
+   * while a dialog is open, or when they have deliberately clicked into another
+   * field, taking focus back sends their typing into the barcode box instead of
+   * the field they are looking at — which made adding a customer impossible.
+   */
+  const refocus = useCallback(() => {
+    if (document.querySelector('[role=dialog]')) return
+    const active = document.activeElement as HTMLElement | null
+    if (active && active !== scanRef.current) {
+      const tag = active.tagName
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || active.isContentEditable) return
+    }
+    scanRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -486,7 +503,16 @@ export function PosPage(): JSX.Element {
                 placeholder="Scan or type a barcode / SKU, then press Enter"
                 value={scan}
                 onChange={(e) => setScan(e.target.value)}
-                onBlur={() => window.setTimeout(refocus, 80)}
+                onBlur={(e) => {
+                  // Where focus is heading. If it is another control — a dialog
+                  // field, a rate box, a dropdown — leave it alone.
+                  const to = e.relatedTarget as HTMLElement | null
+                  if (to) {
+                    const tag = to.tagName
+                    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON' || to.isContentEditable) return
+                  }
+                  window.setTimeout(refocus, 80)
+                }}
                 onKeyDown={(e) => {
                   // Scanners terminate a scan with Enter, but some ship
                   // configured to send Tab instead. Accept either — but only
