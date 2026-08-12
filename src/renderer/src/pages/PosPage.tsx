@@ -115,6 +115,8 @@ export function PosPage(): JSX.Element {
   const [payOpen, setPayOpen] = useState(false)
   const [tender, setTender] = useState({ cash: '', upi: '', card: '', other: '' })
   const [cashGiven, setCashGiven] = useState('')
+  /** Printer the counter's bills go to. Blank means the system default. */
+  const [receiptPrinter, setReceiptPrinter] = useState('')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastAdded, setLastAdded] = useState<string | null>(null)
@@ -153,6 +155,12 @@ export function PosPage(): JSX.Element {
         const rows = await invoke<PartyOpt[]>('parties:list', { partyType: 'customer' })
         try {
           setSalespersons(await invoke<{ id: string; name: string }[]>('salespersons:list', { activeOnly: true }))
+        try {
+          const st = await invoke<Record<string, unknown>>('settings:get', {})
+          if (typeof st?.['printer.receipt'] === 'string') setReceiptPrinter(st['printer.receipt'] as string)
+        } catch {
+          /* no permission to read settings — the system default printer is used */
+        }
         } catch {
           /* a shop that keeps no salespeople simply sees an empty list */
         }
@@ -451,11 +459,24 @@ export function PosPage(): JSX.Element {
       }
       setPayOpen(false)
 
-      // Offer the printed bill straight away — the counter's next action.
+      // Print the bill straight away — the counter's next action is to hand it
+      // over, not to answer a save dialog. If the printer refuses, say so and
+      // leave the PDF as the way out; the sale itself is already recorded.
       try {
-        await invoke('documents:pdf', { type: 'sales', id: res.id, format: 'a4' })
+        await invoke('documents:print', {
+          type: 'sales',
+          id: res.id,
+          format: 'thermal',
+          ...(receiptPrinter ? { deviceName: receiptPrinter } : {})
+        })
       } catch (err) {
-        if (err instanceof ApiError && err.code !== 'VALIDATION') throw err
+        const why = err instanceof ApiError ? err.message : 'unknown error'
+        toast.error(`Invoice ${res.number} saved, but it did not print: ${why}`)
+        try {
+          await invoke('documents:pdf', { type: 'sales', id: res.id, format: 'thermal' })
+        } catch {
+          /* they cancelled the save dialog too — the bill is still recorded */
+        }
       }
 
       setLines([])

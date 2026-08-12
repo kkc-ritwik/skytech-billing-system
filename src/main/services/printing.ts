@@ -29,7 +29,12 @@ export interface PrinterInfo {
 /** Page size in millimetres, when the document is not a standard paper size. */
 export interface PrintPageSizeMm {
   widthMm: number
-  heightMm: number
+  /**
+   * Height in millimetres. Omit for a continuous roll: the length of a receipt
+   * is however long the shopping was, so it is measured from what rendered
+   * rather than guessed at.
+   */
+  heightMm?: number
 }
 
 export interface PrintOptions {
@@ -112,12 +117,24 @@ export async function listPrinters(): Promise<PrinterInfo[]> {
  */
 export async function printHtml(html: string, opts: PrintOptions = {}): Promise<{ printed: true }> {
   return withHiddenWindow(html, async (win) => {
-    const pageSize = opts.pageSizeMm
-      ? {
-          width: Math.round(opts.pageSizeMm.widthMm * MM_TO_MICRON),
-          height: Math.round(opts.pageSizeMm.heightMm * MM_TO_MICRON)
-        }
-      : undefined
+    let pageSize: { width: number; height: number } | undefined
+    if (opts.pageSizeMm) {
+      const widthMm = opts.pageSizeMm.widthMm
+      let heightMm = opts.pageSizeMm.heightMm
+      if (!heightMm) {
+        // CSS millimetres are a fixed 96 dpi, so measuring the rendered height
+        // in pixels converts exactly. A few millimetres of tail keeps the last
+        // line off the cut.
+        const px = (await win.webContents.executeJavaScript(
+          'Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)'
+        )) as number
+        heightMm = Math.max(40, Math.ceil(Number(px) / (96 / 25.4)) + 4)
+      }
+      pageSize = {
+        width: Math.round(widthMm * MM_TO_MICRON),
+        height: Math.round(heightMm * MM_TO_MICRON)
+      }
+    }
 
     return new Promise<{ printed: true }>((resolve, reject) => {
       win.webContents.print(

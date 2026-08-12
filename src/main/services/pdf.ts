@@ -273,6 +273,57 @@ async function renderPdfBuffer(
   }
 }
 
+/**
+ * Send a bill straight to a printer.
+ *
+ * Builds exactly the same document the PDF export does, then hands it to the
+ * spooler instead of a save dialog. The counter's whole job is press a button
+ * and take the paper — a save dialog in the middle of that is a stop, not a
+ * step. Falls back to nothing: if the printer refuses, the caller is told why
+ * and can still save a PDF.
+ */
+export async function printDocument(
+  type: 'sales' | 'purchase',
+  id: string,
+  user: AuthUser,
+  format: 'a4' | 'thermal' = 'thermal',
+  deviceName?: string
+): Promise<{ printed: true; number: string }> {
+  const settings = await getSettings()
+  const useTextile = format !== 'thermal' && type === 'sales' && settings.invoiceTemplate === 'textile'
+
+  let html: string
+  let number: string
+  let pageSizeMm: { widthMm: number; heightMm?: number } | undefined
+
+  if (useTextile) {
+    const built = await buildTextileModel(id)
+    html = renderTextileInvoiceHtml(built.model)
+    number = built.number
+    pageSizeMm = { widthMm: 210, heightMm: 297 }
+  } else {
+    const built = await buildModel(type, id)
+    html = format === 'thermal' ? renderThermalHtml(built.model) : renderDocumentHtml(built.model)
+    number = built.number
+    // A roll declares only its width; the length depends on the shopping.
+    pageSizeMm =
+      format === 'thermal'
+        ? { widthMm: built.model.receiptWidthMm ?? 79 }
+        : { widthMm: 210, heightMm: 297 }
+  }
+
+  await printHtml(html, { deviceName, pageSizeMm, silent: true })
+  await audit({
+    userId: user.id,
+    username: user.username,
+    action: `${type}.print`,
+    entityType: type,
+    entityId: id,
+    details: { number, format, printer: deviceName ?? '(default)' }
+  })
+  return { printed: true, number }
+}
+
 /** Generate the document PDF, prompt for a save location, and open it. */
 export async function exportDocumentPdf(
   type: 'sales' | 'purchase',

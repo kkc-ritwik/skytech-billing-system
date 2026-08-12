@@ -26,6 +26,7 @@ export function SettingsPage(): JSX.Element {
   const canManage = useApp((s) => s.has('settings:manage'))
   const canBackup = useApp((s) => s.has('backup:manage'))
   const [form, setForm] = useState<Form>(emptyForm)
+  const [printers, setPrinters] = useState<{ name: string; displayName: string; isDefault: boolean }[]>([])
   const [prefs, setPrefs] = useState<{
     paperSize: string
     preventNegativeStock: boolean
@@ -35,6 +36,7 @@ export function SettingsPage(): JSX.Element {
     receiptWidthMm: number
     receiptShowLogo: boolean
     receiptShowGstBreakup: boolean
+    receiptPrinter: string
     defaultSchemeLabel: string
     defaultSchemePct: number
     defaultCutLength: number
@@ -48,6 +50,7 @@ export function SettingsPage(): JSX.Element {
     receiptWidthMm: 79,
     receiptShowLogo: true,
     receiptShowGstBreakup: true,
+    receiptPrinter: '',
     defaultSchemeLabel: 'DISCOUNT',
     defaultSchemePct: 0,
     defaultCutLength: 0,
@@ -67,6 +70,11 @@ export function SettingsPage(): JSX.Element {
           invoke<any>('settings:get'),
           invoke<{ dataUrl: string | null }>('settings:logo:get')
         ])
+        try {
+          setPrinters(await invoke<{ name: string; displayName: string; isDefault: boolean }[]>('print:listPrinters', {}))
+        } catch {
+          /* no spooler, or none installed — the list simply stays empty */
+        }
         if (c) {
           const next = { ...emptyForm }
           for (const k of Object.keys(emptyForm) as (keyof Form)[]) next[k] = c[k] ?? ''
@@ -81,6 +89,7 @@ export function SettingsPage(): JSX.Element {
           receiptWidthMm: Number(s?.receiptWidthMm ?? 79) || 79,
           receiptShowLogo: s?.receiptShowLogo !== false,
           receiptShowGstBreakup: s?.receiptShowGstBreakup !== false,
+          receiptPrinter: typeof s?.['printer.receipt'] === 'string' ? (s['printer.receipt'] as string) : '',
           defaultSchemeLabel: (s?.defaultSchemeLabel as string) ?? 'DISCOUNT',
           defaultSchemePct: (s?.defaultSchemePct as number) ?? 0,
           defaultCutLength: (s?.defaultCutLength as number) ?? 0,
@@ -126,6 +135,19 @@ export function SettingsPage(): JSX.Element {
       await invoke('settings:save', patch)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to save preference.')
+    }
+  }
+
+  /**
+   * The stored key is "printer.receipt", which is not a field on the prefs
+   * object, so it is written on its own rather than bent through savePrefs.
+   */
+  async function saveReceiptPrinter(name: string): Promise<void> {
+    setPrefs((p) => ({ ...p, receiptPrinter: name }))
+    try {
+      await invoke('settings:save', { 'printer.receipt': name })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to save the printer.')
     }
   }
 
@@ -311,6 +333,24 @@ export function SettingsPage(): JSX.Element {
             <div className="col-span-2 border-t pt-3 text-xs font-medium uppercase text-muted-foreground">
               Counter receipt
             </div>
+            <Field label="Bill printer">
+              <Select
+                value={prefs.receiptPrinter}
+                disabled={!canManage}
+                onChange={(e) => void saveReceiptPrinter(e.target.value)}
+              >
+                <option value="">System default printer</option>
+                {printers.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.displayName}{p.isDefault ? ' (default)' : ''}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Counter bills go straight here — no save dialog. Barcode labels have
+                their own printer, chosen when you print them.
+              </p>
+            </Field>
             <Field label="Receipt roll width (mm)">
               <Input
                 type="number"
